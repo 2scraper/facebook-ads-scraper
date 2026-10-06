@@ -36,11 +36,11 @@ Every row comes from the data the library itself sends the page: the first 30 ad
 | **Proxies — 2captcha.com/proxy** (2prx.com is the same product, different name) | Many searches in a row from several addresses: residential exits in `.env` or `--proxy-file`, rotated per search with per-exit failure tracking |
 | **Scraper API — 2captcha.com** | No browser at all: `--scraper-api` fetches each search from 2Captcha's side, one HTTP call each (the first 30 ads; scrolling needs a browser engine) |
 | **Scraping Browser API — 2captcha.com** | A remote browser session over CDP with its own proxy, fingerprint and captcha auto-solve bundled — `--cdp-endpoint` |
-| **Browser fingerprints — 2captcha Fingerprint API** | Pin a specific OS/browser/country fingerprint for a locally-launched browser |
+| **Browser fingerprints — 2captcha Fingerprint API** | Pick a Fingerprint API profile by OS and country for a locally-launched browser (applied as its user agent) |
 
 ## Who this is for
 
-Marketers and agencies watching competitors' creatives, researchers and journalists studying political advertising, and anyone who wants Ad Library results in a spreadsheet or a script rather than a browser tab. The per-ad details dialog and anything behind a login are out of scope.
+Marketers and agencies watching competitors' creatives, researchers and journalists studying political advertising, and anyone who wants Ad Library results in a spreadsheet or a script rather than a browser tab. Anything behind a login is out of scope.
 
 ## Get started
 

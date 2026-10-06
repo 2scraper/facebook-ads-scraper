@@ -576,5 +576,5 @@ def add_search_arguments(p) -> None:
     p.add_argument("--exact-phrase", action="store_true", help="Match --query as an exact phrase (the library's own option)")
     p.add_argument("--region", default="ALL", help="Two-letter country code the ads were shown in, or ALL (default). Also fills a pasted URL that names none")
     p.add_argument("--active-status", choices=ap.ACTIVE_STATUSES, default="active", help="active (default, the library's own), inactive or all")
-    p.add_argument("--details", action="store_true", help="Also read each ad's own details dialog: EU/UK reach by age, gender and country, targeting, payer and beneficiary, the advertiser's Instagram account and followers (one more request per ad, ~1.5s each)")
+    p.add_argument("--details", action="store_true", help="Also read each ad's own details dialog: EU/UK reach by age, gender and country, targeting, payer and beneficiary, the advertiser's Instagram account and followers (one more request per ad, about 2s each)")
     p.add_argument("--ad-type", choices=ap.AD_TYPES, default="all", help="all (default) or political_and_issue_ads (adds spend, impressions and 'Paid for by')")

@@ -8,6 +8,18 @@ that changes a default is called out at the top of its entry.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-06
+
+Text only — no change to what is read or written.
+
+### Fixed
+
+- `--max-solves` help: the local solver is disabled, so it caps nothing
+  today (the README already said so); the landing pages no longer promise
+  a browser-specific fingerprint (`--fp-tags` filters by OS only).
+- The exit-code table lists every `stop_reason` a partial run can carry.
+- the landing pages no longer call the ad-details dialog out of scope (--details reads it); the --details help gives the measured ~2s per ad; TESTING names the run sample_output.* really comes from; ten fixtures, not eight.
+
 ## [0.1.0] - 2026-10-06
 
 First release: Meta's Ad Library (facebook.com/ads/library), read logged
@@ -52,14 +64,14 @@ proxy (see `TESTING.md`).
 - Every search is opened with `locale=en_US`: pyppeteer on a non-English
   machine got the library in another language, with no "See ad details"
   button to click.
-- Offline suite on real, trimmed captures (eight fixtures), a failure and
+- Offline suite on real, trimmed captures (ten fixtures), a failure and
   recovery suite, CI on Python 3.9 and 3.12 with a wheel, Docker and
   per-engine job, and a daily canary that needs a `FACEBOOK_PROXY` secret
   and skips without one.
-
-- Hardening found by live runs on 2026-10-06, shared by all three
-  facebook-* repos: pyppeteer's browser cleanup is bounded (it could hang
-  for 20+ minutes after a proxy closed the connection), a login page
+- Hardening found by live runs on 2026-10-06, in the engine code shared
+  with the companion facebook-pages-scraper and
+  facebook-marketplace-scraper: pyppeteer's browser cleanup is bounded (it
+  could hang for 20+ minutes after a proxy closed the connection), a login page
   served under the asked-for address is a block (exit 3) recognised by
   its canonical link, and an empty Scraper API answer is retried as an
   API error.

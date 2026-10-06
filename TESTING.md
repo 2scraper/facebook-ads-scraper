@@ -22,7 +22,7 @@ command line):
 
 | Engine | Run | Result |
 |---|---|---|
-| Playwright | `--query nike --region US --max-results 40` | 40/40 of ~24,416, exit 0, 10s — `sample_output.*` is cut from this run |
+| Playwright | `--query nike --region US --max-results 40` | 40/40 of ~24,416, exit 0, 10s |
 | Selenium | `--query adidas --region DE --max-results 50` | 50/50 of ~2,098, 3 scrolls, exit 0, 20s |
 | Playwright + proxy | `--page-id 15087023444 --active-status all --max-results 60` | 60/60 of ~14,812, exit 0; the log names the exit, password masked |
 | Puppeteer + proxy | `--query election --region US --ad-type political_and_issue_ads --max-results 40` | 40/40 of ~7,877, exit 0 |
@@ -73,7 +73,7 @@ Selenium through the password-protected proxy: exit 5, now logged as
 the proxy's HTTP 407 with what to do (it was logged as "not an Ad
 Library page" before).
 
-**Fixed the same day, found by facebook-marketplace-scraper's live runs
+**Fixed the same day, found by the live runs of the companion repo [facebook-marketplace-scraper](https://github.com/2scraper/facebook-marketplace-scraper)
 in the engine code all three repos share:** pyppeteer's browser cleanup
 could hang for 20+ minutes after a proxy closed the connection (now
 bounded at 10s, a stuck local Chromium is killed — Puppeteer re-run live
@@ -81,7 +81,10 @@ here afterwards: exit 0); a login page served under the asked-for address
 (the Scraper API's pool) is now a block, not an unreadable page; an empty
 Scraper API answer is now retried as an API error.
 
-**`--details`, 2026-10-06:** Playwright, `--query adidas --region DE
+**`--details`, 2026-10-06:** `sample_output.*` is cut from a Playwright
+`--query nike --region DE --max-results 5 --details` run (5/5 with
+details, exit 0).
+ Playwright, `--query adidas --region DE
 --max-results 15 --details`: 15/15 ads with EU reach, the age x gender x
 country breakdown, targeting, payer, beneficiary and the advertiser's
 Instagram account; Selenium and Puppeteer 8/8 each. Found on the way:

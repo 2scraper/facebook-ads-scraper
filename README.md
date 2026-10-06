@@ -285,7 +285,7 @@ nothing writes neither, so it never replaces your previous good file.
 | Exit | Meaning |
 |---|---|
 | `0` | complete |
-| `6` | partial: rows were written, but the run did not finish cleanly — `stop_reason` says why (`stalled`, `blocked`, `not_painted`, `failed_pages`, `remote_api_error`, `proxy_pool_exhausted`) |
+| `6` | partial: rows were written, but the run did not finish cleanly — `stop_reason` says why (`stalled`, `blocked`, `not_painted`, `failed_pages`, `rejected_rows`, `parse_error`, `remote_api_error`, `proxy_pool_exhausted`) |
 | `3` | blocked, no rows |
 | `4` | no rows: the library has no ads for any of the searches |
 | `5` | nothing could be read (the page never painted, a fetch failure, or a Scraper API error); no rows |
