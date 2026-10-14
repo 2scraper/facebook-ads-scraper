@@ -2,8 +2,7 @@
 """playwright_scraper.py — Playwright engine for facebook-ads-scraper.
 Playwright is the primary engine (see selenium_scraper.py /
 puppeteer_scraper.py for parity copies — all three must agree on exit
-codes, run status and whether a run crashes or spends money — CLAUDE.md
-§4).
+codes, run status and whether a run crashes or spends money).
 
 **Input**: a search — `--query` (keywords) or `--page-id` (one
 advertiser), narrowed by `--region`, `--active-status` and `--ad-type` —
@@ -52,7 +51,7 @@ from scraper_api_client import TwoCaptchaClient
 
 ENGINE_NAME = "playwright"
 
-# --- the handful of engine constants that vary per site (CLAUDE.md §5) ---
+# --- the handful of engine constants that vary per site ---
 NAV_TIMEOUT_MS = 45_000
 # The shell arrives first and the results are streamed in after it;
 # page_flow polls for them (PAINT_WAIT_S). This pause only lets a
@@ -71,25 +70,11 @@ POST_FORM_JS = """async (data) => {
 log = logging.getLogger("playwright_scraper")
 
 
-def _positive_int(value: str) -> int:
-    ivalue = int(value)
-    if ivalue < 1:
-        raise argparse.ArgumentTypeError(f"must be a positive integer (got {value!r})")
-    return ivalue
-
-
-def _nonnegative_int(value: str) -> int:
-    ivalue = int(value)
-    if ivalue < 0:
-        raise argparse.ArgumentTypeError(f"must be >= 0 (got {value!r})")
-    return ivalue
-
-
-def _nonnegative_float(value: str) -> float:
-    fvalue = float(value)
-    if fvalue < 0:
-        raise argparse.ArgumentTypeError(f"must be >= 0 (got {value!r})")
-    return fvalue
+# The argparse validators are page_flow's, so the three engines reject the
+# same values with the same message.
+_positive_int = page_flow.positive_int
+_nonnegative_int = page_flow.nonnegative_int
+_nonnegative_float = page_flow.nonnegative_float
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -109,7 +94,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--proxy", default=None, help="A single proxy, e.g. http://login:pass@host:port (or set FACEBOOK_PROXY)")
     p.add_argument("--proxy-file", default=None, help="One proxy per line, same formats as --proxy")
     p.add_argument("--proxy-shuffle", action="store_true")
-    p.add_argument("--proxy-block-retries", type=int, default=3)
+    p.add_argument("--proxy-block-retries", type=_nonnegative_int, default=3)
     p.add_argument("--twocaptcha-key", default=None, help="(or set TWOCAPTCHA_KEY)")
     p.add_argument("--captcha-api", default=None, help="Override the 2Captcha API base URL (testing only)")
     p.add_argument("--solve-captcha", choices=["off", "when-blocked", "always"], default="when-blocked")
@@ -138,10 +123,9 @@ async def _new_context(
     browser: Browser, proxy: Optional[Proxy], user_agent: Optional[str], *, reuse_default: bool = False,
 ) -> BrowserContext:
     """Over --cdp-endpoint, reuse the profile's own default context: it
-    holds the cookies that make the profile worth reusing — the same fix
-    shein-scraper needed live. A local browser gets a fresh isolated
-    context per URL, so no cookie from one exit is replayed from another
-    (CLAUDE.md §8)."""
+    holds the cookies that make the profile worth reusing. A local browser
+    gets a fresh isolated context per URL, so no cookie from one exit is
+    replayed from another."""
     if reuse_default and browser.contexts:
         return browser.contexts[0]
     kwargs = {"locale": "en-US"}  # titles follow the browser language (see selenium_scraper)
@@ -186,7 +170,7 @@ async def _maybe_solve_captcha(
 
 async def _connect_over_cdp(pw, cdp_endpoint: str):
     """Bounded, retried through a still-locked profile, and a 401 says the
-    endpoint expired (scraper_api_client.connect_with_retry, CLAUDE.md §26).
+    endpoint expired (scraper_api_client.connect_with_retry).
     Credentials never reach the message."""
     return await scraper_api_client.connect_with_retry(
         lambda: pw.chromium.connect_over_cdp(cdp_endpoint), redact=redact_credentials, log=log,
@@ -240,7 +224,7 @@ class _PlaywrightSession:
 
     async def scroll_to_bottom(self) -> None:
         # A function object goes through Runtime.callFunctionOn, not eval,
-        # so it works under the site's Content-Security-Policy (CLAUDE.md §18).
+        # so it works under the site's Content-Security-Policy.
         await self.page.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
 
     async def page_height(self) -> int:

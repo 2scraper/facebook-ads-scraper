@@ -24,16 +24,12 @@ never the act of running JS against a real page.
 
 **Until 2026-09-21, no engine in this family actually injected a solved
 token back into a locally-launched (non `--cdp-endpoint`) browser at
-all** — every engine's own `_maybe_solve_captcha` only logged "solved", a
-real gap Roman asked about directly after GeeTest support was added
-without it. `build_injection_script()` closes that gap using each widget
+all** — every engine's own `_maybe_solve_captcha` only logged "solved". `build_injection_script()` closes that gap using each widget
 type's OWN standard, publicly-documented client-integration convention
 (a hidden `g-recaptcha-response` textarea for reCAPTCHA v2, a
 `cf-turnstile-response` field for Turnstile, and so on) — **not** anything
-confirmed against a real shein.com (or any family site's) actual widget
-markup, which has never been captured for ANY type. It is the same
-"standard convention, explicitly unconfirmed against this site" honesty
-posture `shein_parser.py`'s own DOM fallback selectors use. reCAPTCHA v3
+confirmed against a real site's widget markup, which has never been
+captured for ANY type here. reCAPTCHA v3
 has no such convention — it's invisible, and the token is typically
 consumed the instant the SITE'S OWN JavaScript resolves
 `grecaptcha.execute()`'s promise (often straight into an XHR, never read
@@ -98,46 +94,29 @@ _RECAPTCHA_EXPLICIT_LOADER_RE = re.compile(r"recaptcha/api\.js\?render=explicit"
 
 # reCAPTCHA v2's sitekey doesn't always ship as static `<div class="g-
 # recaptcha" data-sitekey="...">` markup, the only shape
-# `_SITEKEY_PATTERNS[RECAPTCHA_V2]` above can see — CONFIRMED live on
-# shein.com, 2026-09-21 (see README "Known limitations" and Roman's own
-# question about whether other captcha vendors are in play): the site
-# loads `https://www.google.com/recaptcha/api.js` and has a live
-# `window.grecaptcha` v2 object (`render`/`execute`/`getResponse`/
-# `reset`/`ready` — not `.enterprise`) on every normal page, but the
-# sitekey itself lives in a JS config object under a site-chosen key
-# name (`window.gbCommonInfo.GOOGLE_VERIFY_SITEKEY`), presumably handed
-# to `grecaptcha.render()` programmatically later (e.g. after a
-# suspicious login attempt) rather than rendered into the initial HTML
-# at all. The static-markup regex above would silently MISS this real,
-# live sitekey — a real detection gap, not a hypothetical one. reCAPTCHA
-# sitekeys have a fixed, distinctive shape regardless of what variable
-# or markup carries them (`6L` + 38 more URL-safe-base64 characters, 40
-# total, confirmed against Google's own documented format and against
-# shein.com's actual `6LcoBR4UAAAAAIi5xU3U_q37C3nFaSckeMaT-P5j`) — so
+# `_SITEKEY_PATTERNS[RECAPTCHA_V2]` above can see. A site can load
+# `https://www.google.com/recaptcha/api.js` on every page and keep the
+# sitekey in a JS config object under a key name of its own choosing,
+# handed to `grecaptcha.render()` programmatically later rather than
+# rendered into the initial HTML at all; the static-markup regex above
+# would silently miss it. reCAPTCHA sitekeys have a fixed, distinctive
+# shape regardless of what variable or markup carries them (`6L` + 38
+# more URL-safe-base64 characters, 40 total, per Google's documented
+# format) — so
 # this searches for that shape ANYWHERE in the page, gated on the v2
 # loader actually being present so it can't misfire on an unrelated
 # 40-character token elsewhere that happens to start with "6L".
 _RECAPTCHA_SITEKEY_ANYWHERE_RE = re.compile(r"\b(6L[\w-]{38})\b")
 _RECAPTCHA_V2_LOADER_RE = re.compile(r"recaptcha/api\.js")
 
-# GeeTest — added 2026-09-21 after shein.com's own risk gateway
-# (captcha_type=909, see shein_parser.BOT_CHALLENGE_MARKERS) correlated
-# with GeeTest via three circumstantial signals documented in
-# shein_parser.py's module docstring (the site's global stylesheet defines
-# .geetest_wind/.geetest_panel on EVERY page, robots.txt disallows
-# /geetest/, and the numeric captcha_type code is consistent with GeeTest's
-# own convention) — NOT a confirmed vendor string the way every other
-# CaptchaType below was found (an actual `cf-turnstile`/`g-recaptcha`/
-# `h-captcha` class or loader URL, seen live). No family site, shein.com
-# included, has ever had its actual GeeTest widget markup captured — only
-# a waiting/redirect shell page, never what renders when a real challenge
-# is actually shown. These two patterns are therefore UNCONFIRMED
+# GeeTest — no actual GeeTest widget markup has ever been captured here,
+# only inferred from circumstantial signals on another site. These two
+# patterns are therefore UNCONFIRMED
 # best-effort, built from GeeTest's own public client-integration
 # documentation (a `data-captcha-id`/`captchaId` attribute for v4; `gt`
 # and `challenge` fields together for v3 — both are 32-character
-# hex-like ids in GeeTest's own docs), not a shein.com-specific fact.
-# `# TODO: verify live` applies here exactly like shein_parser.py's own
-# DOM fallback selectors — update these the moment a real capture exists.
+# hex-like ids in GeeTest's own docs), not a site-specific fact.
+# TODO: verify live — update these the moment a real capture exists.
 _GEETEST_V4_ID_PATTERNS = (
     re.compile(r'data-captcha-id=["\']([a-f0-9]{32})["\']'),
     re.compile(r'captchaId["\']?\s*:\s*["\']([a-f0-9]{32})["\']'),
@@ -168,7 +147,7 @@ class CaptchaSignal:
 # `page.content()` over --cdp-endpoint captures THOSE injected <script>
 # tags too, and their src/data attributes contain marker substrings like
 # "cf-turnstile" regardless of whether the actual page has a real widget —
-# on a real StockX 403 that turned out to be a plain, static Cloudflare
+# on a real 403 that turned out to be a plain, static Cloudflare
 # WAF page with no captcha at all ("Sorry, you have been blocked" — no
 # `data-sitekey` anywhere), this alone made GENERIC_BOT_CHALLENGE_MARKERS
 # fire and identify_widget() correctly find nothing to solve, which then
@@ -211,8 +190,7 @@ def identify_widget(html: str) -> Optional[CaptchaSignal]:
         if m:
             return CaptchaSignal(ctype, sitekey=m.group(1))
     # Fallback for a reCAPTCHA v2 sitekey that isn't in static markup at
-    # all — see _RECAPTCHA_SITEKEY_ANYWHERE_RE's module-level comment for
-    # the live shein.com evidence this closes a real gap for.
+    # all — see _RECAPTCHA_SITEKEY_ANYWHERE_RE's module-level comment.
     if _RECAPTCHA_V2_LOADER_RE.search(html):
         m = _RECAPTCHA_SITEKEY_ANYWHERE_RE.search(html)
         if m:
@@ -234,7 +212,7 @@ def _task_payload(signal: CaptchaSignal, page_url: str, *, proxyless: bool, min_
     # `challenge`, v4 sends `captchaId`) — confirmed against 2Captcha's own
     # published API reference for GeeTestTask(Proxyless)/GeeTestV4Task
     # (Proxyless), unlike identify_widget()'s extraction patterns above,
-    # which are NOT confirmed against a real shein.com capture.
+    # which are NOT confirmed against a real capture.
     if signal.captcha_type == CaptchaType.GEETEST_V4:
         return {
             "type": "GeeTestV4TaskProxyless" if proxyless else "GeeTestV4Task",
@@ -267,7 +245,7 @@ def _task_payload(signal: CaptchaSignal, page_url: str, *, proxyless: bool, min_
         # score` is the CLI knob; omitting it would leave 2Captcha's own
         # server-side default in effect, silently, which is the same
         # "documented flag nobody reads" shape this family has shipped
-        # before (CLAUDE.md §17) — so this module always sends one.
+        # before — so this module always sends one.
         task["minScore"] = min_score
     return task
 

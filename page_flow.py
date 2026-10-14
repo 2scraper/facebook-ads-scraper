@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """page_flow.py — what one Ad Library search MEANS, and how far it is
-scrolled, decided once for all engines (CLAUDE.md §1: three copies of this
+scrolled, decided once for all engines (three copies of this
 triage would drift, and the drift would be silent — one engine reporting
 exit 3 where its twin reports 0 on the same page).
 
@@ -12,7 +12,7 @@ The library answers a logged-out search these ways, all seen live on
      decided first, and the status only ever refines an `unknown` page;
   2. the library's shell with nothing painted yet → `loading`: WAIT,
      bounded, never retry (a retry re-rolls a page that was about to
-     paint — CLAUDE.md §18);
+     paint);
   3. "No ads match your search criteria" → `empty`: a complete answer,
      zero rows, not a failure;
   4. a login or checkpoint page → `blocked` (never seen on this route,
@@ -22,11 +22,11 @@ The library answers a logged-out search these ways, all seen live on
 
 A search has no page addresses: the first 30 ads are in the page, and
 each scroll brings the next 10 through a GraphQL response the engine
-captures (CLAUDE.md §18: one page kind may have no per-page addresses at
+captures (one page kind may have no per-page addresses at
 all). So one search is one browser session, scrolled until `--max-results`
 ads are read, the library says there are no more (`has_next_page: false`),
 or three scrolls in a row bring nothing new and leave the page height
-unchanged (CLAUDE.md §8: three rounds, not one). The last is reported as
+unchanged (three rounds, not one). The last is reported as
 `stalled` — the run is partial, never complete-looking.
 
 Triage is driver-independent; the shared async flow below consumes NAMED
@@ -36,6 +36,7 @@ boundary.
 """
 from __future__ import annotations
 
+import argparse
 import logging as _logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path as _Path
@@ -95,7 +96,7 @@ def is_challenge(html: str) -> bool:
 class SearchOutcome:
     url: str
     rows: List[Product] = field(default_factory=list)
-    state: str = "unknown"          # content | empty | login | loading | unknown
+    state: str = "unknown"          # content | empty | login | loading | parse_error | unknown
     blocked: bool = False
     failure: Optional[str] = None   # fetch_error | not_painted | stalled | proxy_pool_exhausted | remote_api_error | parse_error
     total_results: Optional[int] = None
@@ -108,7 +109,7 @@ class SearchOutcome:
 
 
 # --------------------------------------------------------------------------- #
-# The engine boundary (CLAUDE.md §26)
+# The engine boundary
 # --------------------------------------------------------------------------- #
 class PageSession(_Protocol):
     async def goto(self, url: str) -> Optional[int]: ...  # HTTP status or None; raises on failure
@@ -136,7 +137,7 @@ class Engine(_Protocol):
 
 
 class SolveBudget:
-    """One cap on PAID captcha solves for the whole run (CLAUDE.md §23: a
+    """One cap on PAID captcha solves for the whole run (a
     per-page limit nothing sums is a bill). `limit=0` means never pay."""
 
     def __init__(self, limit: int):
@@ -153,6 +154,31 @@ class SolveBudget:
 # --------------------------------------------------------------------------- #
 # Inputs
 # --------------------------------------------------------------------------- #
+def positive_int(value: str) -> int:
+    """argparse type: an integer >= 1. Shared by every engine so the three
+    reject the same values with the same message."""
+    ivalue = int(value)
+    if ivalue < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer (got {value!r})")
+    return ivalue
+
+
+def nonnegative_int(value: str) -> int:
+    """argparse type: an integer >= 0 (a count of EXTRA attempts, a cap)."""
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0 (got {value!r})")
+    return ivalue
+
+
+def nonnegative_float(value: str) -> float:
+    """argparse type: a number of seconds >= 0."""
+    fvalue = float(value)
+    if fvalue < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0 (got {value!r})")
+    return fvalue
+
+
 def resolve_urls(args) -> tuple:
     """(search URLs, skipped). `--query` / `--page-id` build one search;
     `--url` wins over `--urls-file`, each a pasted Ad Library search URL.
@@ -160,6 +186,12 @@ def resolve_urls(args) -> tuple:
     fetched once."""
     region = ap.normalize_region(getattr(args, "region", None))
     if getattr(args, "query", None) or getattr(args, "page_id", None):
+        # A URL that came from FACEBOOK_URL (environment or .env) is only a
+        # default: a typed --query/--page-id wins over it instead of being
+        # refused as a conflict the user never typed.
+        if args.url and getattr(args, "_url_source", None) in ("environment", ".env"):
+            _log.info("Ignoring FACEBOOK_URL from %s: --query/--page-id was given.", args._url_source)
+            args.url = None
         if args.url or args.urls_file:
             raise ValueError("give --query/--page-id OR --url/--urls-file, not both: a pasted URL carries its own filters")
         return [ap.search_url(query=args.query, page_id=args.page_id, region=region,
@@ -215,7 +247,7 @@ async def _wait_for_paint(session: PageSession) -> tuple:
     html = await session.content()
     state = ap.page_state(html, final_url=await session.current_url())
     waited = 0.0
-    while (state == "loading" and waited < PAINT_WAIT_S) or (state == "unknown" and waited < UNKNOWN_WAIT_S):
+    while (state in ("loading", "parse_error") and waited < PAINT_WAIT_S) or (state == "unknown" and waited < UNKNOWN_WAIT_S):
         await session.wait(POLL_S)
         waited += POLL_S
         try:
@@ -425,6 +457,14 @@ async def fetch_search(engine: Engine, args, url: str, index: int, proxy_pool) -
             outcome.blocked = True
             _log.warning("%s: facebook.com sent this visitor to a login page — blocked, not empty. "
                          "Slow down (--delay-between-pages) or use another exit (--proxy-file).", url)
+        elif state == "parse_error":
+            # The page states how many ads match but none could be read: the
+            # page's data changed shape, not the network or the rendering.
+            collector.add(ap.page_batches(html), page=0)  # keeps the stated total
+            outcome.failure = "parse_error"
+            _log.error("%s: the library states %s results but none of its ads could be read — the page's data "
+                       "has changed shape (a parser problem, not a block or a slow page). Re-run with --dump-html "
+                       "and report it.", url, collector.total if collector.total is not None else "some")
         elif state == "loading":
             outcome.failure = "not_painted"
             _log.warning("%s: the library's page loaded but its results never painted in %ds — nothing read. "
@@ -451,7 +491,7 @@ async def fetch_search(engine: Engine, args, url: str, index: int, proxy_pool) -
         outcome.rejected = collector.rejected
         if proxy_pool is not None and proxy is not None:
             if outcome.blocked:
-                proxy_pool.report_failure(proxy, dead=True)  # a block is a property of the EXIT (CLAUDE.md §8)
+                proxy_pool.report_failure(proxy, dead=True)  # a block is a property of the EXIT
             else:
                 proxy_pool.report_success(proxy)
         if getattr(engine, "last_remote_error", False) and not outcome.rows:
@@ -500,13 +540,17 @@ async def run(engine: Engine, args, *, urls: List[str], proxy_pool, client, star
 def finish_searches(args, outcomes: List[SearchOutcome], *, engine_name: str, urls: List[str], started_at: float) -> int:
     products: List[Product] = []
     seen = set()
-    failed_pages, failures = [], []
+    failed_pages, failures, unattempted = [], [], []
     for index, o in enumerate(outcomes, 1):
         for row in o.rows:
             if row.sku not in seen:  # an ad two searches both found is one row, the first search's
                 seen.add(row.sku)
                 products.append(row)
-        if o.failure or o.blocked:
+        if o.failure == "not_attempted":
+            # Never fetched (the run stopped first): not a failed page.
+            unattempted.append(index)
+            failures.append({"url": o.url, "reason": o.failure})
+        elif o.failure or o.blocked:
             failed_pages.append(index)
             failures.append({"url": o.url, "reason": o.failure or "blocked"})
     searches = [{"url": o.url, "state": o.state, "rows": len(o.rows), "total_results": o.total_results,
@@ -520,7 +564,7 @@ def finish_searches(args, outcomes: List[SearchOutcome], *, engine_name: str, ur
                   failed_pages=failed_pages, failures=failures,
                   capped=any(o.stop in ("limit", "no_scroll") and o.has_next_page for o in outcomes),
                   total_results=sum(totals) if totals else None, searches=searches,
-                  rejected_rows=sum(o.rejected for o in outcomes))
+                  rejected_rows=sum(o.rejected for o in outcomes), unattempted_pages=unattempted)
 
 
 _INCOMPLETE_REASONS = ("stalled", "not_painted", "parse_error", "proxy_pool_exhausted")
@@ -529,20 +573,23 @@ _INCOMPLETE_REASONS = ("stalled", "not_painted", "parse_error", "proxy_pool_exha
 def finish(args, *, products: List[Product], blocked: bool, remote_api_error: bool, engine_name: str,
            urls: List[str], started_at: float, pages_completed: int, failed_pages: List[int],
            failures=None, capped: bool = False, total_results: Optional[int] = None, searches=None,
-           rejected_rows: int = 0) -> int:
+           rejected_rows: int = 0, unattempted_pages: Optional[List[int]] = None) -> int:
     budget = getattr(args, "_solve_budget", None)
     selection = {"mode": "search", "urls": urls, "max_results": args.max_results}
     if getattr(args, "details", False):
         selection["details"] = True
     extra = {"solves_spent": budget.spent if budget is not None else 0, "selection": selection,
-             "failed_urls": failures or [], "searches": searches or []}
+             "failed_urls": failures or [], "searches": searches or [],
+             "unattempted_pages": unattempted_pages or []}
     return _finish_run(
         products=products, out_path=args.out, fmt=args.format, engine=engine_name, url=urls[0] if urls else "",
         pages_requested=len(urls), pages_completed=pages_completed,
         failed_pages=failed_pages or None, blocked=blocked, remote_api_error=remote_api_error,
         allow_empty=args.allow_empty, started_at=started_at, price_confirmed_pct=None,
         max_results=args.max_results, total_results=total_results, rejected_rows=rejected_rows,
-        incomplete_reason=next((f["reason"] for f in (failures or []) if f["reason"] in _INCOMPLETE_REASONS), None),
+        incomplete_reason=next((f["reason"] for f in (failures or []) if f["reason"] in _INCOMPLETE_REASONS),
+                               # searches never fetched still make the run incomplete
+                               "not_attempted" if unattempted_pages and not failed_pages else None),
         capped=capped, extra_meta=extra,
     )
 

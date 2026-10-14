@@ -35,7 +35,7 @@ What a logged-out visitor is actually served:
     first and the first batch is streamed into the page later; on three
     of 13 popular searches it was still missing 6 seconds after the page
     loaded, and present a few seconds after that. That is "loading", not
-    "empty" and not "blocked" (CLAUDE.md §18: which of the three missing
+    "empty" and not "blocked" (which of the three missing
     content is decides the answer).
   - **No results** is said in so many words — "No ads match your search
     criteria" — and the connection's `count` is 0.
@@ -91,7 +91,7 @@ log = logging.getLogger("ad_parser")
 
 BASE_URL = "https://www.facebook.com/ads/library/"
 SOURCE = "facebook.com"
-MIN_CARD_MATCHES = 1  # a batch with one new ad is progress (CLAUDE.md §5 names the constant)
+MIN_CARD_MATCHES = 1  # a batch with one new ad is progress
 
 # The shell every Ad Library page is built from, painted or not — present on
 # all 46 captures, absent from every other facebook.com page captured.
@@ -332,17 +332,22 @@ def is_login_page(html: str) -> bool:
 
 
 def page_state(html: str, *, final_url: Optional[str] = None) -> str:
-    """What the served page IS, strongest signal first (CLAUDE.md §17: order
+    """What the served page IS, strongest signal first (order
     signals by how much they prove): `content` (results embedded),
     `empty` (the library's own no-results sentence, or a result count of
     0), `login` (a login or checkpoint page), `loading` (the library's
-    shell with nothing painted yet), or `unknown` (not an Ad Library
+    shell with nothing painted yet), `parse_error` (a result count above
+    0 with no ad that could be read), or `unknown` (not an Ad Library
     page at all — Chromium's own error page, an interstitial)."""
     batches = page_batches(html)
     if any(b.ads for b in batches):
         return "content"
     if NO_RESULTS_TEXT in (html or "") or any(b.total == 0 for b in batches):
         return "empty"
+    if any(b.total for b in batches):
+        # The page says N ads match and none could be read: the data changed
+        # shape. Reported as a parser failure, never as an unpainted page.
+        return "parse_error"
     path = urlparse(final_url or "").path
     if any(path.startswith(p) for p in LOGIN_PATHS) or is_login_page(html):
         return "login"
@@ -600,7 +605,7 @@ def now_iso() -> str:
 
 class Collector:
     """Rows in the order the site returned them, deduped on the Library ID
-    (first occurrence kept — CLAUDE.md §8: merge in page order, not arrival
+    (first occurrence kept — merge in page order, not arrival
     order), with the facts a run's sidecar needs."""
 
     def __init__(self, *, region: Optional[str], limit: int):
