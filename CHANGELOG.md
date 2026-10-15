@@ -37,6 +37,9 @@ that changes a default is called out at the top of its entry.
   does not have; its suite check uses Ad Library searches.
 - The credential scan now reads `smoke_test.py` too (its credential-shaped
   fixtures are assembled from pieces) and fails if it read no file.
+- The daily canary no longer skips green when `FACEBOOK_PROXY` is not
+  set: it runs the search from the runner's own address and is red if the
+  search is blocked, empty or incomplete (naming the secret in the error).
 - Comments, the automated-review prompt and test names state their rules
   directly instead of pointing at a private document; a suite check keeps
   it that way. Comments that described other sites were removed.

@@ -260,7 +260,10 @@ stops, never falling back to your own address), and keep
 `--delay-between-pages` at 2 seconds or more.
 
 **A datacentre address has not been measured yet.** The daily canary
-runs from a GitHub runner only when a proxy secret is configured.
+runs one real search every day from a GitHub runner: through the
+`FACEBOOK_PROXY` secret when it is set, from the runner's own address
+otherwise. It is red whenever the search is blocked, empty or incomplete —
+a green badge means 100 ads were actually read that day.
 
 ## Scraper API mode
 
