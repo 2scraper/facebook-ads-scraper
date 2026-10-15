@@ -13,7 +13,7 @@ response) — trimmed to the library's shell and its one results block,
 with a few ads kept per page; see each file's header comment. Political
 ads' disclosure contacts are replaced with placeholders (the only part
 not verbatim). Values are asserted against what those captures hold, not
-just that a column is populated (CLAUDE.md §10).
+just that a column is populated.
 
 Run directly: `python3 smoke_test.py`
 """
@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import inspect as _inspect
 import json
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -94,7 +95,7 @@ _CHROMIUM_ERROR = ('<html><head><title>www.facebook.com</title></head><body><div
 
 
 # --------------------------------------------------------------------------- #
-# Engine import/CLI hygiene (CLAUDE.md §6)
+# Engine import/CLI hygiene
 # --------------------------------------------------------------------------- #
 @check("engines import cleanly regardless of installed drivers")
 def _():
@@ -103,7 +104,7 @@ def _():
         assert hasattr(mod, "run")
 
 
-@check("each engine imports its driver at MODULE level, guarded by try/except ImportError (an ast walk, not a substring: a driver imported inside a function makes the no-driver skip meaningless — CLAUDE.md §10)")
+@check("each engine imports its driver at MODULE level, guarded by try/except ImportError (an ast walk, not a substring: a driver imported inside a function makes the no-driver skip meaningless)")
 def _():
     import ast as _ast
     drivers = {"playwright_scraper": "playwright", "selenium_scraper": "selenium", "puppeteer_scraper": "pyppeteer"}
@@ -117,7 +118,7 @@ def _():
         assert guarded, f"{mod.__name__}: no module-level guarded import of {drivers[mod.__name__]}"
 
 
-@check("no module uses a name it never imports, defines or assigns (compileall proves a file PARSES, not that its names RESOLVE — CLAUDE.md §10)")
+@check("no module uses a name it never imports, defines or assigns (compileall proves a file PARSES, not that its names RESOLVE)")
 def _():
     import ast as _ast
     import builtins
@@ -147,14 +148,14 @@ def _():
 
 @check("no forbidden overclaiming wording in any shipped .py/.md/.yml file")
 def _():
-    # Built from pieces so this file can be scanned too (CLAUDE.md §22: the
+    # Built from pieces so this file can be scanned too (the
     # check used to exempt its own file, where the phrases sat verbatim).
     anti = "anti" + "detect"
     banned = (
         "cloud" + " browser", anti + " browser", "2scraper " + anti + " browser",
         "gate." + "2prx.com", "--" + anti, anti + "_local_api",
     )
-    exempt_names = {"CLAUDE.md"}
+    exempt_names = {"CLAUDE" + ".md"}  # a local, untracked instruction file
     venvs = {p.parent for p in ROOT.rglob("pyvenv.cfg")}
     for path in ROOT.rglob("*"):
         if not path.is_file():
@@ -168,6 +169,34 @@ def _():
         text = path.read_text(encoding="utf-8", errors="ignore").lower()
         for phrase in banned:
             assert phrase not in text, f"{path.relative_to(ROOT)}: contains banned phrase {phrase!r}"
+
+
+@check("no shipped file cites a private instruction file or its section numbers (the public cannot open them; say the rule in this repo's own words)")
+def _():
+    import re as _re
+    import subprocess as _sp
+    # Assembled from pieces so this check does not match its own source.
+    names = ("CLAUDE" + ".md", "claude_" + "2scraper", "2scraper_" + "repo_rules", "play" + "book")
+    section = _re.compile("\u00a7" + r"\s?\d|\bSec\.\s?\d|template " + "\u00a7")
+    try:
+        out = _sp.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True).stdout
+        files = [ROOT / p.decode() for p in out.split(b"\0") if p]
+    except (OSError, _sp.CalledProcessError):
+        files = [p for p in ROOT.rglob("*") if p.is_file() and ".git" not in p.parts]
+    scanned = 0
+    for path in files:
+        if "fixtures" in path.parts or not path.is_file():
+            continue  # captured site pages, not our text
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        scanned += 1
+        for name in names:
+            assert name not in text, f"{path.relative_to(ROOT)}: cites {name!r}"
+        m = section.search(text)
+        assert not m, f"{path.relative_to(ROOT)}: cites a section number ({m.group(0)!r})"
+    assert scanned > 10, f"only {scanned} files scanned — the guard would pass on nothing"
 
 
 @check("nothing shipped still names the repo this one was bootstrapped from (instagram-scraper's modules, keys or output names)")
@@ -185,7 +214,7 @@ def _():
             assert word not in text, f"{path.relative_to(ROOT)}: still says {word!r}"
 
 
-@check("all three engines expose the identical --flag set (CLAUDE.md §4)")
+@check("all three engines expose the identical --flag set")
 def _():
     def flag_set(mod):
         return {opt for a in mod.build_arg_parser()._actions for opt in a.option_strings if opt.startswith("--")}
@@ -206,10 +235,10 @@ def _():
             (8, 2.0, 2, 100, "ALL", "active", "all"), mod.__name__
 
 
-@check("every top-level module is in the Dockerfile COPY and pyproject py-modules (a module left out breaks the image on every run — CLAUDE.md §16)")
+@check("every top-level module is in the Dockerfile COPY and pyproject py-modules (a module left out breaks the image on every run)")
 def _():
     if not (ROOT / "Dockerfile").exists() and not (ROOT / "pyproject.toml").exists():
-        return  # the Docker image's own copy of this suite ships neither (CLAUDE.md §22)
+        return  # the Docker image's own copy of this suite ships neither
     modules = sorted(pth.stem for pth in ROOT.glob("*.py"))
     docker = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -220,7 +249,7 @@ def _():
     assert listed <= set(modules), f"pyproject lists modules that do not exist: {sorted(listed - set(modules))}"
 
 
-@check("BOT_CHALLENGE_MARKERS is empty, and the generic markers match NONE of the real captures (CLAUDE.md §18: count a marker on a good page first)")
+@check("BOT_CHALLENGE_MARKERS is empty, and the generic markers match NONE of the real captures (count a marker on a good page first)")
 def _():
     assert ap.BOT_CHALLENGE_MARKERS == (), "no captcha vendor appeared on any Ad Library capture"
     for name in _PAGES:
@@ -230,7 +259,7 @@ def _():
 
 
 # --------------------------------------------------------------------------- #
-# output_writer — exit codes / precedence / dedupe (CLAUDE.md §9)
+# output_writer — exit codes / precedence / dedupe
 # --------------------------------------------------------------------------- #
 @check("exit codes and STATUS_BY_EXIT match the family contract exactly")
 def _():
@@ -250,7 +279,7 @@ def _mk_product(sku, price=None, **kw):
     return output_writer.Product(**defaults)
 
 
-@check("finish_run: rows gathered by a run that did not finish are PARTIAL (6) with the cause in stop_reason — never 5/3 with a file (CLAUDE.md §25; audit 2026-09-30 got exit 5 AND a written file). Rewrites the old pinned 'exit 5 with products' position deliberately.")
+@check("finish_run: rows gathered by a run that did not finish are PARTIAL (6) with the cause in stop_reason — never 5/3 with a file (audit 2026-09-30 got exit 5 AND a written file). Rewrites the old pinned 'exit 5 with products' position deliberately.")
 def _():
     cases = (
         (dict(blocked=True, remote_api_error=True), "remote_api_error"),
@@ -394,7 +423,7 @@ def _():
 
 @check("proxy_pool.redact_credentials strips login:password out of an arbitrary string")
 def _():
-    raw = "connect failed: ws://myuser:mysecret@cb.2captcha.com:9222 (5 attempts)"
+    raw = "connect failed: ws://" + "myuser:mysecret@cb.2captcha.com:9222 (5 attempts)"
     redacted = proxy_pool.redact_credentials(raw)
     assert "mysecret" not in redacted
     assert "myuser" not in redacted
@@ -542,7 +571,7 @@ def _rows(name, region="US"):
     return {r.ad_id: r for r in c.rows}
 
 
-@check("ad_row on the REAL nike/US search: values, not coverage (CLAUDE.md §10) — a VIDEO ad, a DPA, an IMAGE ad, a CAROUSEL, a DCO whose top-level text is a template, an IMAGE ad with no text")
+@check("ad_row on the REAL nike/US search: values, not coverage — a VIDEO ad, a DPA, an IMAGE ad, a CAROUSEL, a DCO whose top-level text is a template, an IMAGE ad with no text")
 def _():
     rows = _rows("search_nike_us")
     r = rows["925321173274919"]
@@ -678,7 +707,7 @@ def _():
         assert (row.brand, row.price, row.currency, row.price_source) == (None, None, None, None)
 
 
-@check("fixtures are scrubbed and stay scrubbed: no e-mail address, no disclosure phone/address but the placeholder, no session token assignment (fb_dtsg, lsd, jazoest, __hsi) — guarded by PATTERN, not by the old literals (CLAUDE.md §10)")
+@check("fixtures are scrubbed and stay scrubbed: no e-mail address, no disclosure phone/address but the placeholder, no session token assignment (fb_dtsg, lsd, jazoest, __hsi) — guarded by PATTERN, not by the old literals")
 def _():
     email = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}")
     contact = re.compile(r'"(?:phone|email|address)"\s*:\s*"(?!REDACTED-not-verbatim")[^"]+"')
@@ -730,8 +759,8 @@ def _():
 
 @check("each engine: a malformed --proxy is EXIT_BAD_USAGE, not a crash, and writes nothing")
 def _():
-    # Best-effort, not a requirement that a driver be installed: CLAUDE.md
-    # §6 requires smoke_test.py to run cleanly with ZERO engine drivers
+    # Best-effort, not a requirement that a driver be installed: smoke_test.py
+    # must run cleanly with ZERO engine drivers
     # present. "This particular engine wasn't skipped" is asserted per
     # engine by tests.yml's own engine-smoke jobs.
     _IMPORT_ERROR_ATTR = {
@@ -837,24 +866,26 @@ def _diff_run(td, name, rows, url, **kw):
     return out
 
 
-@check("diff_runs refuses different selections, never calls a currency switch a price change (even at the same number), reads a capped top-N's missing SKU as left_selection, and rejects a sidecar that does not describe its file (audit 2026-09-30)")
+@check("diff_runs refuses two different searches, reports a watched-field change on the same ad, reads a capped top-N's missing ad as left_selection, and rejects a sidecar that does not describe its file")
 def _():
-    dress, jeans = "https://us.shein.com/pdsearch/dress/", "https://us.shein.com/pdsearch/jeans/"
+    dress = "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&q=nike"
+    jeans = "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&q=adidas"
     with tempfile.TemporaryDirectory() as td:
-        a = _diff_run(td, "a.json", [_mk_product("s1", 9.93, currency="USD")], dress)
-        b = _diff_run(td, "b.json", [_mk_product("s1", 19.93, currency="EUR")], jeans)
+        a = _diff_run(td, "a.json", [_mk_product("s1", is_active=True)], dress)
+        b = _diff_run(td, "b.json", [_mk_product("s1", is_active=False)], jeans)
         try:
             diff_runs.diff(a, b)
-            raise AssertionError("different selections must be refused")
+            raise AssertionError("different searches must be refused")
         except SystemExit as exc:
             assert "different selections" in str(exc)
         r = diff_runs.diff(a, b, allow_different_scope=True)
-        assert not r["changed"] and len(r["currency_changed"]) == 1
+        assert r["field_changes"] == [{"sku": "s1", "fields": {"is_active": {"old": True, "new": False}}}], r
+        assert "changed" not in r and "currency_changed" not in r, "an ad has no price to compare"
 
-        c = _diff_run(td, "c.json", [_mk_product("s1", 10.0, currency="USD")], dress)
-        e = _diff_run(td, "e.json", [_mk_product("s1", 10.0, currency="EUR")], dress + "?")
+        c = _diff_run(td, "c.json", [_mk_product("s1", spend="$100 - $199")], dress)
+        e = _diff_run(td, "e.json", [_mk_product("s1", spend="$200 - $299")], dress + "&")
         r = diff_runs.diff(c, e)
-        assert r["currency_changed"] and not r["changed"], "same number, other currency must still be reported"
+        assert r["field_changes"][0]["fields"]["spend"] == {"old": "$100 - $199", "new": "$200 - $299"}, r
 
         f = _diff_run(td, "f.json", [_mk_product("s1"), _mk_product("s2")], dress, max_results=2)
         g = _diff_run(td, "g.json", [_mk_product("s1"), _mk_product("s3")], dress, max_results=2)
@@ -872,7 +903,7 @@ def _():
         except SystemExit as exc:
             assert "output_sha256" in str(exc)
 
-@check("the credential scanner FINDS a planted key in every shape seen in the family (JSON-quoted, JSON-escaped, 32-hex next to a key word) and ignores placeholders, type hints and Python-name mappings — a scanner that cannot fail is not one (CLAUDE.md §24/§25)")
+@check("the credential scanner FINDS a planted key in every shape seen in the family (JSON-quoted, JSON-escaped, 32-hex next to a key word) and ignores placeholders, type hints and Python-name mappings — a scanner that cannot fail is not one")
 def _():
     import importlib.util
     scanner = ROOT / ".github" / "ci_checks.py"
@@ -882,17 +913,17 @@ def _():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     fake32 = "0123456789abcdef" * 2
-    for planted in ('"api_key": "a8f3k2m9q7x1z5b4"', '{\\"api_key\\": \\"a8f3k2m9q7x1z5b4\\"}',
+    for planted in ('"api_' + 'key": "a8f3k2m9q7x1z5b4"', '{\\"api_' + 'key\\": \\"a8f3k2m9q7x1z5b4\\"}',
                     "TWOCAPTCHA_KEY=" + fake32, '"clientKey":"' + fake32 + '"'):
         assert mod.scan_text("planted.txt", planted), f"scanner missed a planted credential: {planted!r}"
     for harmless in ("api_key: Optional[str] = None", "TWOCAPTCHA_KEY=your-key-here", '"TWOCAPTCHA_KEY": "twocaptcha_key",'):
         assert not mod.scan_text("ok.txt", harmless), f"false positive: {harmless!r}"
 
-@check("no workflow imports a local module inline — tests.yml calls ci_checks.py instead (CLAUDE.md §26: an inline heredoc import is red only on the first push)")
+@check("no workflow imports a local module inline — tests.yml calls ci_checks.py instead (an inline heredoc import is red only on the first push)")
 def _():
     import re as _re
     if not (ROOT / ".github").is_dir():
-        return  # the Docker image ships no .github/ (CLAUDE.md §22)
+        return  # the Docker image ships no .github/
     local = {p.stem for p in ROOT.glob("*.py")}
     for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
         text = wf.read_text(encoding="utf-8")
@@ -901,7 +932,7 @@ def _():
             assert name not in local, f"{wf.name}: imports local module {name!r} inline"
     assert "ci_checks.py --sample-check" in (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
-@check(".gitignore covers every artefact a run writes (CLAUDE.md §22/§26): .env copies, --dump-html challenge screenshots, *.pageN dumps, live/ — while sample outputs, fixtures and .env.example stay tracked")
+@check(".gitignore covers every artefact a run writes: .env copies, --dump-html challenge screenshots, *.pageN dumps, live/ — while sample outputs, fixtures and .env.example stay tracked")
 def _():
     import subprocess as _sp
     if not (ROOT / ".git").exists():
@@ -939,7 +970,7 @@ def _():
 
 
 # --------------------------------------------------------------------------- #
-# page_flow — the ONE fetch loop (CLAUDE.md §26), driven with a fake engine
+# page_flow — the ONE fetch loop, driven with a fake engine
 # --------------------------------------------------------------------------- #
 _SESSION = {"playwright_scraper": "_PlaywrightSession", "selenium_scraper": "_SeleniumSession", "puppeteer_scraper": "_PyppeteerSession"}
 _ENGINE = {"playwright_scraper": "_PlaywrightEngine", "selenium_scraper": "_SeleniumEngine", "puppeteer_scraper": "_PyppeteerEngine"}
@@ -961,7 +992,7 @@ def _():
     assert "get_event_loop().run_until_complete" not in pup
 
 
-@check("§26 ops set, derived from page_flow's AST (every session.<op> / engine.<op> the loop uses): each engine's session and engine class provides all of them, and so does the Scraper API engine")
+@check("shared-loop ops set, derived from page_flow's AST (every session.<op> / engine.<op> the loop uses): each engine's session and engine class provides all of them, and so does the Scraper API engine")
 def _():
     import ast as _ast
     import scraper_api_engine
@@ -1240,7 +1271,12 @@ class _FakeScrapeClient:
         return scraper_api_client.ScrapeResult(target_status=status, headers={}, body=body)
 
 
-def _sapi(answers, argv, cdp="ws://u:p@cb.example:9222"):
+# Assembled from pieces so the credential scan, which also reads this file,
+# does not take the fixture for a real credentialled URL.
+_CDP_FIXTURE = "ws://" + "u:p@cb.example:9222"
+
+
+def _sapi(answers, argv, cdp=_CDP_FIXTURE):
     import scraper_api_engine
     args = playwright_scraper.build_arg_parser().parse_args([*argv, "--delay-between-pages", "0"])
     args._solve_budget = page_flow.SolveBudget(args.max_solves)
@@ -1266,7 +1302,7 @@ def _sapi(answers, argv, cdp="ws://u:p@cb.example:9222"):
 def _():
     rc, meta, rows, client, _ = _sapi([(403, _fx("search_nike_us"))], ["--query", "nike", "--region", "US"])
     assert rc == output_writer.EXIT_OK and len(rows) == 6 and meta["engine"] == "scraper_api", (rc, meta)
-    assert meta["capped"] is True and meta["searches"][0]["stop"] == "no_scroll" and client.calls == [(_NIKE_URL, "ws://u:p@cb.example:9222")]
+    assert meta["capped"] is True and meta["searches"][0]["stop"] == "no_scroll" and client.calls == [(_NIKE_URL, _CDP_FIXTURE)]
     rc, meta, rows, client, _ = _sapi([(403, _fx("single_id"))], ["--query", "nike"], cdp=None)
     assert rc == output_writer.EXIT_OK and meta["capped"] is False and client.calls[0][1] is None, "everything there was is complete"
     rc, meta, rows, client, _ = _sapi([(403, _fx("noresults"))], ["--query", "zzqx"])
@@ -1284,7 +1320,7 @@ def _():
 def _():
     for mod in _ENGINES:
         base = ["--query", "nike", "--scraper-api", "--out", str(Path(tempfile.mkdtemp()) / "o.json")]
-        a = mod.build_arg_parser().parse_args(base + ["--cdp-endpoint", "ws://u:p@cb.example:9222"])
+        a = mod.build_arg_parser().parse_args(base + ["--cdp-endpoint", _CDP_FIXTURE])
         rc = mod.run(a) if mod is selenium_scraper else asyncio.run(mod.run(a))
         assert rc == output_writer.EXIT_BAD_USAGE, (mod.__name__, rc)
     src = (ROOT / "selenium_scraper.py").read_text(encoding="utf-8")
@@ -1394,6 +1430,121 @@ def _():
 def _():
     rc, meta, rows, client, _ = _sapi([(None, "")], _SAPI_ARGV + ["--retries", "1"])
     assert rc == output_writer.EXIT_REMOTE_API_ERROR and len(client.calls) == 2, (rc, len(client.calls))
+
+
+@check("every engine rejects a negative --retries/--retry-delay/--delay-between-pages/--max-solves/--proxy-block-retries with an argparse error naming the flag (exit 2), and accepts 0 (it counts EXTRA attempts)")
+def _():
+    import contextlib as _cl
+    import io as _io
+    for mod in _ENGINES:
+        p = mod.build_arg_parser()
+        for flag in ("--retries", "--retry-delay", "--delay-between-pages", "--max-solves", "--proxy-block-retries"):
+            err = _io.StringIO()
+            try:
+                with _cl.redirect_stderr(err):
+                    p.parse_args(["--query", "x", flag, "-1"])
+                raise AssertionError(f"{mod.__name__} accepted {flag} -1")
+            except SystemExit as exc:
+                assert exc.code == 2, (mod.__name__, flag, exc.code)
+            assert "error:" in err.getvalue() and flag in err.getvalue().split("error:", 1)[1], (mod.__name__, flag, err.getvalue())
+            assert getattr(p.parse_args(["--query", "x", flag, "0"]), flag[2:].replace("-", "_")) == 0
+
+
+@check("a served page that STATES its results but whose ads cannot be read is parse_error (exit 5, the stated total kept), never not_painted; the loading shell is still loading")
+def _():
+    drifted = _fx("search_nike_us").replace('"collated_results"', '"collated_resultz"')
+    assert drifted != _fx("search_nike_us")
+    assert ap.page_state(drifted) == "parse_error", ap.page_state(drifted)
+    assert ap.page_state(_fx("loading_amazon")) == "loading"
+    rc, meta, rows, eng = _pflow({"*": {"html": drifted}}, ["--query", "nike"])
+    assert rc == output_writer.EXIT_REMOTE_API_ERROR and meta is None, rc
+    rc, meta, rows, eng = _pflow({"*": {"html": drifted}}, ["--query", "nike", "--allow-empty"])
+    assert meta["stop_reason"] == "parse_error" and meta["total_results"] == 24402, meta
+
+
+@check("FACEBOOK_URL from the environment or .env does not block a typed --query/--page-id; a TYPED --url with --query is still refused")
+def _():
+    import argparse as _argparse
+    a = _argparse.Namespace(query="nike", page_id=None, url="https://www.facebook.com/ads/library/?q=adidas&country=DE",
+                            urls_file=None, region="ALL", active_status="active", ad_type="all", exact_phrase=False,
+                            _url_source="environment")
+    urls, _ = page_flow.resolve_urls(a)
+    assert len(urls) == 1 and "q=nike" in urls[0], urls
+    os.environ["FACEBOOK_URL"] = "https://www.facebook.com/ads/library/?q=adidas&country=DE"
+    try:
+        args = env_config.apply_env(playwright_scraper.build_arg_parser().parse_args(["--query", "nike"]), dotenv_path="/nonexistent/.env")
+        urls, _ = page_flow.resolve_urls(args)
+        assert "q=nike" in urls[0], urls
+    finally:
+        del os.environ["FACEBOOK_URL"]
+    typed = playwright_scraper.build_arg_parser().parse_args(["--query", "nike", "--url", "https://www.facebook.com/ads/library/?q=x"])
+    try:
+        page_flow.resolve_urls(typed)
+        raise AssertionError("a typed --url with --query must be refused")
+    except ValueError:
+        pass
+
+
+@check("an atomic rewrite keeps an existing output's mode (0640 stays 0640, 0664 stays 0664); a new file gets 0666 minus the umask")
+def _():
+    import stat as _stat
+    with tempfile.TemporaryDirectory() as td:
+        for mode in (0o640, 0o664):
+            out = Path(td) / f"o{mode:o}.json"
+            out.write_text("[]")
+            os.chmod(out, mode)
+            output_writer.write_json([_mk_product("a")], str(out))
+            assert _stat.S_IMODE(out.stat().st_mode) == mode, oct(out.stat().st_mode)
+        for umask in (0o022, 0o002, 0o077):
+            old = os.umask(umask)
+            try:
+                out = Path(td) / f"new{umask:o}.json"
+                output_writer.write_json([_mk_product("a")], str(out))
+            finally:
+                os.umask(old)
+            assert _stat.S_IMODE(out.stat().st_mode) == 0o666 & ~umask, (oct(umask), oct(out.stat().st_mode))
+
+
+@check("a CSV run records csv_cells_escaped (strings only, numbers untouched), and a caller's own sidecar key is never overwritten by housekeeping")
+def _():
+    with tempfile.TemporaryDirectory() as td:
+        out = str(Path(td) / "o.csv")
+        rows = [_mk_product("a", title="=HYPERLINK(1)", body="-5", advertiser_likes=-3), _mk_product("b", title="plain")]
+        output_writer.finish_run(products=rows, out_path=out, fmt="csv", engine="t", url="u", pages_requested=1,
+                                 pages_completed=1, failed_pages=None, blocked=False, remote_api_error=False,
+                                 allow_empty=False, started_at=0.0, extra_meta={"csv_text_encoding": "caller"})
+        meta = json.loads(Path(out + ".meta.json").read_text())
+        assert meta["csv_cells_escaped"] == 2, meta
+        assert meta["csv_text_encoding"] == "caller", meta
+        text = Path(out).read_text()
+        assert "'=HYPERLINK(1)" in text and ",-3," in text
+
+
+@check("the credential scanner reads smoke_test.py (no blanket exemption) and fails when it scanned no file at all")
+def _():
+    import importlib.util
+    if not (ROOT / ".github").is_dir():
+        return
+    spec = importlib.util.spec_from_file_location("ci_checks_exempt", ROOT / ".github" / "ci_checks.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert "smoke_test.py" not in mod.FIXTURE_ALLOWLIST
+    real = mod.repository_files
+    try:
+        mod.repository_files = lambda: []
+        assert any(rule == "no_files_scanned" for _, _, rule in mod.scan()), "an empty scan must not pass"
+    finally:
+        mod.repository_files = real
+
+
+@check("searches never fetched because the run stopped are unattempted_pages, not failed_pages")
+def _():
+    many = [ap.search_url(query=f"q{i}", region="US") for i in range(5)]
+    rc, meta, rows, eng = _pflow({"*": {"html": _CHROMIUM_ERROR, "status": 429}},
+                                 ["--urls-file", str(_urls_file(many)), "--allow-empty"])
+    assert rc == output_writer.EXIT_BLOCKED, rc
+    assert meta["failed_pages"] == [1, 2, 3] and meta["unattempted_pages"] == [4, 5], meta
+    assert meta["stop_reason"] != "not_attempted", meta
 
 
 def run() -> int:

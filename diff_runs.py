@@ -7,19 +7,12 @@ their `.meta.json` sidecar: a partial run's un-fetched pages would otherwise
 read as delisted products, which is a false signal worse than no diff at
 all.
 
-A price difference that comes with a `price_source` difference is reported
-as `source_changed`, not `changed` — it says something about how much of
-each run's data got DOM-confirmed, not about the site. `--fail-on-change`
-ignores `source_changed` rows for exactly that reason.
-
-Added after the 2026-09-30 audit, which diffed one SKU at 9.93 USD from a
-"dress" run against 19.93 EUR from a "jeans" run and got a price change:
+An ad has no price, so what is compared is the monitored ad fields below
+(`field_changes`), plus which ads appeared or disappeared.
 
 - Two runs must share their scope — the sidecar `url` (host, path and
-  query: market, search term, category) and `sort`. Otherwise the diff is
-  refused.
-- A currency difference on a SKU is `currency_changed`, never `changed`,
-  and is reported even when the number is the same.
+  query: region, search term, filters) and the input selection. Otherwise
+  the diff is refused.
 - When either run was capped by `--max-results` (sidecar `capped`), a SKU
   missing from the new run is `left_selection` (it fell out of the top N),
   not `removed`.
@@ -119,11 +112,6 @@ def diff(old_path: str, new_path: str, *, allow_different_scope: bool = False, f
             f"error: refusing to diff runs of different selections: {old_meta.get('url')!r} vs "
             f"{new_meta.get('url')!r}. Pass --allow-different-scope to compare them anyway."
         )
-    if not allow_different_scope and (old_meta.get("sort") or None) != (new_meta.get("sort") or None):
-        raise SystemExit(
-            f"error: refusing to diff runs with different --sort ({old_meta.get('sort')!r} vs "
-            f"{new_meta.get('sort')!r}) — a capped top-N under another ordering is another selection."
-        )
     if not allow_different_scope and old_meta.get("selection") != new_meta.get("selection"):
         raise SystemExit("error: refusing to diff different input selections (or legacy metadata without selection).")
     capped = bool(old_meta.get("capped") or new_meta.get("capped"))
@@ -138,7 +126,7 @@ def diff(old_path: str, new_path: str, *, allow_different_scope: bool = False, f
     # visits. Only an uncapped run's missing ad is really gone from the search.
     removed = [] if capped else missing
     left_selection = missing if capped else []
-    changed, source_changed, currency_changed, field_changes = [], [], [], []
+    field_changes = []
 
     for sku in sorted(old_skus & new_skus):
         o, n = old_rows[sku], new_rows[sku]
@@ -151,26 +139,10 @@ def diff(old_path: str, new_path: str, *, allow_different_scope: bool = False, f
                     changes[name]["delta"] = after - before
         if changes:
             field_changes.append({"sku": sku, "fields": changes})
-        old_price, new_price = o.get("price"), n.get("price")
-        if (o.get("currency") or None) != (n.get("currency") or None):
-            currency_changed.append({
-                "sku": sku, "old_price": old_price, "old_currency": o.get("currency"),
-                "new_price": new_price, "new_currency": n.get("currency"), "title": n.get("title"),
-            })
-            continue
-        if old_price == new_price:
-            continue
-        entry = {"sku": sku, "old_price": old_price, "new_price": new_price, "title": n.get("title")}
-        if o.get("price_source") != n.get("price_source"):
-            entry["old_price_source"] = o.get("price_source")
-            entry["new_price_source"] = n.get("price_source")
-            source_changed.append(entry)
-        else:
-            changed.append(entry)
 
     return {
         "added": added, "removed": removed, "left_selection": left_selection,
-        "field_changes": field_changes, "changed": changed, "source_changed": source_changed, "currency_changed": currency_changed,
+        "field_changes": field_changes,
         "old_count": len(old_rows), "new_count": len(new_rows), "capped": capped,
     }
 
@@ -183,7 +155,7 @@ def main() -> int:
                     help="Exit 1 when monitored fields or selection membership change")
     p.add_argument("--json", action="store_true", help="Print the diff as JSON instead of a summary")
     p.add_argument("--allow-different-scope", action="store_true",
-                    help="Compare runs whose sidecar URLs (market, query, category) differ")
+                    help="Compare runs whose sidecar URLs (region, query, filters) differ")
     p.add_argument("--fields", help="Comma-separated fields to monitor; default: " + ",".join(MONITOR_FIELDS)
                    + "; also available: " + ",".join(EXTRA_FIELDS))
     args = p.parse_args()
@@ -204,11 +176,8 @@ def main() -> int:
         print(f"  monitored rows changed: {len(result['field_changes'])}")
         for entry in result["field_changes"]:
             print(f"    {entry['sku']}: " + json.dumps(entry["fields"], ensure_ascii=False))
-        print(f"  price changed:  {len(result['changed'])}")
-        print(f"  source_changed: {len(result['source_changed'])} (ignored by --fail-on-change)")
-        print(f"  currency_changed: {len(result['currency_changed'])} (ignored by --fail-on-change: a market change, not a price change)")
 
-    if args.fail_on_change and any(result[key] for key in ("changed", "field_changes", "added", "removed", "left_selection")):
+    if args.fail_on_change and any(result[key] for key in ("field_changes", "added", "removed", "left_selection")):
         return 1
     return 0
 

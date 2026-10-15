@@ -8,6 +8,42 @@ that changes a default is called out at the top of its entry.
 
 ## [Unreleased]
 
+> **Behaviour changes.** `selenium_scraper.py` and `puppeteer_scraper.py`
+> now reject a negative `--retries`, `--retry-delay`,
+> `--delay-between-pages` or `--max-solves` with exit 2, as
+> `playwright_scraper.py` already did; all three now also reject a
+> negative `--proxy-block-retries`. A page that states how many ads match
+> but whose ads cannot be read now ends as `parse_error` (exit 5 with no
+> rows, 6 with some) instead of `not_painted`. `diff_runs.py --json` no
+> longer carries the always-empty `changed`, `source_changed` and
+> `currency_changed` keys. Rewriting an existing output file now keeps
+> that file's permissions.
+
+### Fixed
+
+- The three engines share one set of argument validators, so they accept
+  and reject the same values with the same message.
+- A Meta payload change that leaves the result count in place but the ads
+  unreadable is reported as a parser failure, with the library's stated
+  total kept in the sidecar, rather than as a page that never painted.
+- `FACEBOOK_URL` in the environment or `.env` no longer makes
+  `--query`/`--page-id` exit 2; a typed `--url` with `--query` is still
+  refused.
+- Searches never fetched because the run stopped early are listed in the
+  sidecar's `unattempted_pages` and no longer counted in `failed_pages`.
+- A CSV run's sidecar records `csv_cells_escaped`; a key the caller puts
+  in the sidecar is no longer overwritten by the writer's own.
+- `diff_runs.py` no longer compares price, currency or sort, which an ad
+  does not have; its suite check uses Ad Library searches.
+- The credential scan now reads `smoke_test.py` too (its credential-shaped
+  fixtures are assembled from pieces) and fails if it read no file.
+- The daily canary no longer skips green when `FACEBOOK_PROXY` is not
+  set: it runs the search from the runner's own address and is red if the
+  search is blocked, empty or incomplete (naming the secret in the error).
+- Comments, the automated-review prompt and test names state their rules
+  directly instead of pointing at a private document; a suite check keeps
+  it that way. Comments that described other sites were removed.
+
 ## [0.1.1] - 2026-10-06
 
 Text only — no change to what is read or written.

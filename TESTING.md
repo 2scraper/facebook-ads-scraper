@@ -191,9 +191,11 @@ cannot authenticate one.
 
 `tests.yml` runs the offline suite on Python 3.9 and 3.12, builds the
 wheel and the Docker image, and runs one `engine-smoke` job per engine.
-`canary.yml` needs the `FACEBOOK_PROXY` repo secret (a residential
-proxy); without it the job skips with a notice. Dispatch it once by hand
-and check both branches.
+`canary.yml` always runs one real 100-ad search: through the
+`FACEBOOK_PROXY` repo secret (a residential proxy) when it is set, from
+the runner's own address otherwise. It never skips: a blocked, empty or
+incomplete run is red, and without the secret the error names it.
+Dispatch it once by hand.
 
 ## 9. What "done" looks like
 

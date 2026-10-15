@@ -2,13 +2,9 @@
 """output_writer.py — the row model, JSON/CSV writer, dedupe, exit codes,
 and run metadata. Carries (almost) no site knowledge: everything here is
 part of the family's shared output CONTRACT — diverging from it needs a
-written reason, not a per-site tweak. Ported near-verbatim from
-lidl-scraper's output_writer.py (CLAUDE.md §7: porting starts by copying
-the family-shared modules from the newest sibling and diffing what
-changed on purpose) — in turn ported from skyscanner-scraper's, in turn
-from stockx-scraper's original (commit 00b5570). The exit codes,
+written reason, not a per-site tweak. The exit codes,
 STATUS_BY_EXIT map, and finish_run() outcome-precedence logic are
-IDENTICAL to every prior family member on purpose, including the fix
+shared with the other 2scraper repositories on purpose, including the fix
 from a 2026-09-15 audit that found `blocked`/`remote_api_error` were
 being silently ignored whenever products were present or --allow-empty
 was passed. Only the `Product` dataclass's site-specific tail (below the
@@ -20,6 +16,7 @@ import csv
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -63,8 +60,8 @@ class Product:
     end.
 
     One row is one AD in Meta's Ad Library, as a logged-out visitor's
-    search returns it. The family prefix is kept byte-identical
-    (CLAUDE.md §9); what the commerce fields mean here:
+    search returns it. The family prefix is kept byte-identical; what the
+    commerce fields mean here:
 
     - `sku`: `facebook-ad-{ad_archive_id}` — the Library ID the site prints
       on every card ("Library ID: 1797816175001109").
@@ -227,6 +224,12 @@ def csv_text(value):
     return value
 
 
+def csv_escaped_count(products: Sequence[Product]) -> int:
+    """How many CSV cells csv_text() changed — recorded in the sidecar as
+    `csv_cells_escaped`, so the CSV/JSON divergence is declared."""
+    return sum(1 for p in products for v in asdict(p).values() if csv_text(v) is not v)
+
+
 @contextmanager
 def _atomic_text(out_path, *, newline=None):
     target = Path(out_path)
@@ -236,12 +239,17 @@ def _atomic_text(out_path, *, newline=None):
             yield stream
             stream.flush()
             os.fsync(stream.fileno())
-        # mkstemp creates the file 0600; an output file gets the permissions a
-        # plain open() would have given it (0666 minus the umask), so a run
-        # into a shared or mounted directory stays readable as before.
-        umask = os.umask(0)
-        os.umask(umask)
-        os.chmod(temporary, 0o666 & ~umask)
+        # mkstemp creates the file 0600. A file that already exists keeps its
+        # own mode; a new one gets what a plain open() would have given it
+        # (0666 minus the umask) — never a flat mode, which would widen or
+        # narrow what the user chose.
+        try:
+            mode = stat.S_IMODE(os.stat(target).st_mode)
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(temporary, mode)
         os.replace(temporary, target)
     finally:
         if os.path.exists(temporary):
@@ -316,9 +324,7 @@ def write_meta(
 # finish_run — the single place every engine calls to decide exit code,
 # whether to write output at all, and whether to write a sidecar. Keeping
 # this in one shared function is what stops the three engines' exit-code
-# mapping from drifting apart. Structurally identical to stockx-scraper's
-# post-audit-fix finish_run() (commit 00b5570) — see that file's comment
-# for the full incident writeup this precedence order fixes.
+# mapping from drifting apart.
 # --------------------------------------------------------------------------- #
 def finish_run(
     *,
@@ -360,7 +366,7 @@ def finish_run(
     # blocked partway through.
     #
     # Rows gathered by a run that did NOT finish cleanly are `partial` (6),
-    # with the cause in `stop_reason` (CLAUDE.md §25: exit 5 and exit 3
+    # with the cause in `stop_reason` (exit 5 and exit 3
     # promise no file; 6 means "some rows, incomplete"). Audit 2026-09-30:
     # this used to return 5 or 3 AND write the rows, so a consumer keyed on
     # the exit code threw away good data. `rejected_rows` counts records
@@ -378,7 +384,7 @@ def finish_run(
                        or ("failed_pages" if failed_pages and not blocked and not remote_api_error else status))
     elif remote_api_error or blocked or partial or rejected_rows:
         status, exit_code = "partial", EXIT_PARTIAL
-        # A throttle is not a block (CLAUDE.md §24): "blocked" sends the
+        # A throttle is not a block: "blocked" sends the
         # reader to buy a proxy, "rate_limited" to slow down.
         stop_reason = ("remote_api_error" if remote_api_error else "rate_limited" if rate_limited and blocked
                        else "blocked" if blocked else incomplete_reason or ("failed_pages" if partial else "rejected_rows"))
@@ -399,21 +405,25 @@ def finish_run(
         return exit_code
 
     write_output(products, out_path, fmt)
-    extra = dict(extra_meta or {})
+    # Housekeeping keys go UNDER the caller's extra_meta: a key the caller set
+    # is never overwritten by one computed here.
+    housekeeping = {}
     if fmt == "csv":
-        extra["csv_text_encoding"] = CSV_TEXT_ENCODING
+        housekeeping["csv_text_encoding"] = CSV_TEXT_ENCODING
+        housekeeping["csv_cells_escaped"] = csv_escaped_count(products)
     if rejected_rows:
-        extra["rejected_rows"] = rejected_rows
+        housekeeping["rejected_rows"] = rejected_rows
     # What diff_runs needs to refuse a meaningless comparison: the cap the
     # run was given (a top-N selection, where "removed" means "fell out of
     # the top N", not "delisted") and a hash binding this sidecar to the
     # exact output file beside it.
     if max_results is not None:
-        extra["max_results"] = max_results
-        extra["capped"] = len(products) >= max_results if capped is None else capped
+        housekeeping["max_results"] = max_results
+        housekeeping["capped"] = len(products) >= max_results if capped is None else capped
     if total_results is not None:
-        extra["total_results"] = total_results  # what the site says exists, vs product_count collected
-    extra["output_sha256"] = hashlib.sha256(Path(out_path).read_bytes()).hexdigest()
+        housekeeping["total_results"] = total_results  # what the site says exists, vs product_count collected
+    housekeeping["output_sha256"] = hashlib.sha256(Path(out_path).read_bytes()).hexdigest()
+    extra = {**housekeeping, **(extra_meta or {})}
     write_meta(
         out_path, status=status, stop_reason=stop_reason, engine=engine, url=url,
         pages_requested=pages_requested, pages_completed=pages_completed,

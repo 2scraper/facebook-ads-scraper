@@ -260,7 +260,10 @@ stops, never falling back to your own address), and keep
 `--delay-between-pages` at 2 seconds or more.
 
 **A datacentre address has not been measured yet.** The daily canary
-runs from a GitHub runner only when a proxy secret is configured.
+runs one real search every day from a GitHub runner: through the
+`FACEBOOK_PROXY` secret when it is set, from the runner's own address
+otherwise. It is red whenever the search is blocked, empty or incomplete —
+a green badge means 100 ads were actually read that day.
 
 ## Scraper API mode
 
@@ -278,7 +281,9 @@ at once with exit 5.
 Every run writes `<out>` and `<out>.meta.json`: status, `stop_reason`,
 the search URLs, per search the ads read, the library's own total, how
 many scrolls and why it stopped (`limit`, `end`, `stalled`, `no_scroll`,
-`empty`), failed searches with reasons, whether `--max-results` capped
+`empty`), failed searches with reasons (`failed_pages`; searches never
+fetched because the run stopped early are listed in `unattempted_pages`
+instead), whether `--max-results` capped
 it, solves spent, and a hash of the output file. A run that collects
 nothing writes neither, so it never replaces your previous good file.
 
@@ -288,18 +293,19 @@ nothing writes neither, so it never replaces your previous good file.
 | `6` | partial: rows were written, but the run did not finish cleanly — `stop_reason` says why (`stalled`, `blocked`, `not_painted`, `failed_pages`, `rejected_rows`, `parse_error`, `remote_api_error`, `proxy_pool_exhausted`) |
 | `3` | blocked, no rows |
 | `4` | no rows: the library has no ads for any of the searches |
-| `5` | nothing could be read (the page never painted, a fetch failure, or a Scraper API error); no rows |
+| `5` | nothing could be read (the page never painted, a fetch failure, a Scraper API error, or `parse_error`: the page stated how many ads match but none of them could be read — the page's data changed shape, please report it); no rows |
 | `2` | bad usage, including input where every line was skipped |
 | `1` | crash (a bug; please report it) |
 
 **CSV and safe writes.** In a CSV export, text that a spreadsheet would
 run as a formula (starting with `=`, `+`, `-` or `@`, or with a literal
 leading apostrophe) gets a leading `'`; the sidecar records this
-(`csv_text_encoding: apostrophe-v1`) and `diff_runs.py` restores the
-original text before comparing. JSON is unchanged. Every output file and
-sidecar is written to a temporary file first and swapped in only once
-complete, so a failed write never leaves a half-written file over the
-previous good one.
+(`csv_text_encoding: apostrophe-v1`, and how many cells were changed as
+`csv_cells_escaped`) and `diff_runs.py` restores the original text before
+comparing. Numbers and JSON are unchanged. Every output file and sidecar
+is written to a temporary file first and swapped in only once complete,
+so a failed write never leaves a half-written file over the previous good
+one; a file that already exists keeps its permissions.
 
 ## Monitoring changes
 

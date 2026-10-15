@@ -23,17 +23,12 @@ separate host):
     all. Lives on its own hostname (`scraper.2captcha.com`, not
     `api.2captcha.com`) with its own Bearer-token auth, which is why it
     gets its own `scraper_api_base` override rather than reusing
-    `self.api_base`. Confirmed live 2026-09-22 against shein.com: it DOES
-    fetch real pages (verified real product markup came back), but it is
-    NOT a bypass of shein's own bot-mitigation — the same `/risk/
-    challenge` interstitial that a local Playwright browser hits shows up
-    here too, intermittently. By itself it also has no captcha solving at
-    all (there's no live page/DOM here for a solved token to be injected
-    into) and no documented parameter to pin the exit country/locale (a
-    clean fetch landed on shein.com's Netherlands locale in one live test,
-    which this repo's parser — tuned for the US/English markup — then
-    read as zero products, not blocked). `scrape_url()`'s `cdp_url`
-    parameter (below) is the fix for both — chaining this product to
+    `self.api_base`. It fetches real pages, but it is not a bypass of a
+    site's own bot-mitigation: a challenge a local browser meets can show
+    up here too. By itself it has no captcha solving at all (there's no
+    live page/DOM here for a solved token to be injected into) and no
+    documented parameter to pin the exit country/locale. `scrape_url()`'s
+    `cdp_url` parameter (below) is the fix for both — chaining this product to
     2Captcha's own Scraping Browser instead of their default pool.
     Here, `--scraper-api` (scraper_api_engine.py) calls `scrape_url()`
     for each profile or post page, with `cdp_url` set to
@@ -74,10 +69,9 @@ class CaptchaTask:
 @dataclass
 class ScrapeResult:
     """One Scraper API `/tasks/sync` response. `target_status` is the
-    TARGET page's own HTTP status (shein.com's, not 2Captcha's) — shein's
-    own risk gateway answers with 200 for a challenge page exactly like it
-    does for a real one (see shein_parser.py), so a caller still has to run
-    the same `detect_from_html(body, ...)` marker check as the browser
+    TARGET page's own HTTP status (the site's, not 2Captcha's). A site can
+    answer a challenge page with 200 exactly like a real one, so a caller
+    still has to run the same `detect_from_html(body, ...)` marker check as the browser
     engines do; `target_status` alone does not tell blocked apart from ok."""
     target_status: Optional[int]
     headers: dict
@@ -85,7 +79,7 @@ class ScrapeResult:
 
 
 # --------------------------------------------------------------------------- #
-# Scraping Browser API connect policy — CLAUDE.md §26, measured on a sibling
+# Scraping Browser API connect policy, measured on a sibling
 # repo: a profile stays `profile_locked` for ~1.6-1.9s after a clean
 # disconnect (HTTP 500 to an immediate reconnect), pyppeteer's connect()
 # never resolves on a refused handshake, and a 401 means the endpoint's
@@ -144,8 +138,8 @@ class TwoCaptchaClient:
         self.timeout = timeout
         # `--captcha-api` (testing only): override the base URL so a smoke
         # test or a local run can point this at a mock server instead of
-        # the real https://api.2captcha.com. CLAUDE.md §17 names the exact
-        # failure mode this guards against — a CLI flag defined on the
+        # the real https://api.2captcha.com. The failure mode this guards
+        # against — a CLI flag defined on the
         # parser but never read by anything is "a documented feature not
         # working at all", found live in this family more than once.
         # `self.api_base` (an instance attribute, never the module-level
@@ -174,10 +168,7 @@ class TwoCaptchaClient:
         # pair, so it propagated all the way up as an uncaught crash.
         # That directly contradicts this codebase's own stated policy (see
         # captcha_solver.py's module docstring): "a solver-side error is a
-        # WARNING, never a crash — the run continues". Confirmed the
-        # identical, still-unfixed gap in stockx-scraper's
-        # scraper_api_client.py (left there per the standing instruction
-        # not to touch that repo).
+        # WARNING, never a crash — the run continues".
         try:
             resp = requests.post(f"{self.api_base}{path}", json=payload, timeout=self.timeout)
         except requests.exceptions.RequestException as exc:
@@ -321,8 +312,8 @@ class TwoCaptchaClient:
         # Unlike createTask/getTaskResult/getBalance above, this endpoint
         # takes its key as a URL query parameter (`?key=...`), not a JSON
         # body — and `requests` puts the FULL URL, query string included,
-        # into the text of every HTTPError and connection error (CLAUDE.md
-        # §8 names this exact endpoint). Redact before raising, and drop
+        # into the text of every HTTPError and connection error, and
+        # this endpoint takes its key in the query string. Redact before raising, and drop
         # the original exception from the chain (`from None`) so its own
         # unredacted text can't surface via "the above exception was the
         # direct cause of…".

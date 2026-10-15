@@ -7,15 +7,17 @@ on:
 
 jobs:
   # A real run: one keyword search for 100 ads — the 30 the page embeds and
-  # at least 7 scroll batches, so scrolling is exercised every day — through
-  # a residential proxy, with a local Playwright Chromium. A GitHub runner
-  # is a datacentre address, and how the library answers one has not been
-  # measured; so without the FACEBOOK_PROXY secret this job SKIPS with a
-  # notice rather than risk going red every day for the address's sake.
+  # at least 7 scroll batches, so scrolling is exercised every day — with a
+  # local Playwright Chromium. It ALWAYS runs: the README's claim is that the
+  # library is readable logged out with no key and no proxy, and a canary that
+  # skips tests nothing. With the FACEBOOK_PROXY secret set the search goes
+  # through that proxy (env only, never argv); without it, straight from the
+  # GitHub runner. A blocked, empty, stalled, partial or remote-error run is
+  # red either way, and when no proxy was configured the error names the
+  # secret that would let it route around a datacentre refusal.
   #
   # `vars.FACEBOOK_CANARY_QUERY` / `vars.FACEBOOK_CANARY_REGION` override
   # the search (default nike / US: ~24,000 results on 2026-10-06).
-  # Blocked, empty, stalled, partial and remote-error outcomes are red.
   canary:
     runs-on: ubuntu-latest
     env:
@@ -25,42 +27,34 @@ jobs:
       FACEBOOK_PROXY: ${{ secrets.FACEBOOK_PROXY }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Skip — no FACEBOOK_PROXY secret configured
-        if: env.HAS_PROXY != 'true'
-        run: |
-          echo "::notice::Skipping: no FACEBOOK_PROXY secret. Set it (a residential \
-          http://login:password@host:port proxy) as a repo secret to turn the canary on. \
-          This is a SKIP, not a pass or a fail."
-
       - uses: actions/setup-python@v5
-        if: env.HAS_PROXY == 'true'
         with:
           python-version: "3.12"
       - name: Install Playwright and Chromium
-        if: env.HAS_PROXY == 'true'
         run: |
           pip install -r requirements-playwright.txt
           playwright install --with-deps chromium
 
-      # The proxy reaches the scraper through the environment only, never
-      # argv (env_config.py reads FACEBOOK_PROXY).
       - name: One search, 100 ads
-        if: env.HAS_PROXY == 'true'
         run: |
           set +e
+          if [ "$HAS_PROXY" = "true" ]; then echo "Route: FACEBOOK_PROXY secret"; \
+          else echo "Route: the GitHub runner's own address (no FACEBOOK_PROXY secret)"; fi
           python3 playwright_scraper.py --query "$CANARY_QUERY" --region "$CANARY_REGION" \
             --max-results 100 --format json --out canary.json --dump-html
           echo "canary_exit=$?" >> "$GITHUB_ENV"
 
       - name: Require a complete run with full rows
-        if: env.HAS_PROXY == 'true'
         run: |
           python3 -c "
           import json, os
           code = int(os.environ['canary_exit'])
           print(f'exit {code}')
           if code != 0:
+              if os.environ.get('HAS_PROXY') != 'true' and code in (3, 4, 5):
+                  print('::error::canary got exit %d from the GitHub runner with no proxy. If this is a '
+                        'datacentre refusal, set the FACEBOOK_PROXY repo secret (a residential '
+                        'http://login:password@host:port proxy).' % code)
               raise SystemExit(f'canary requires EXIT_OK=0, got {code}')
           meta = json.load(open('canary.json.meta.json'))
           print(json.dumps(meta, indent=2))
@@ -83,8 +77,8 @@ jobs:
           print('canary: OK')
           "
 
-      - name: Upload artifacts on every non-skipped run
-        if: always() && env.HAS_PROXY == 'true'
+      - name: Upload artifacts on every run
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: canary-${{ github.run_id }}
