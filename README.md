@@ -259,11 +259,11 @@ keeps getting blocked is dropped, and once every exit is dropped the run
 stops, never falling back to your own address), and keep
 `--delay-between-pages` at 2 seconds or more.
 
-**A datacentre address has not been measured yet.** The daily canary
-runs one real search every day from a GitHub runner: through the
+**A datacentre address has not been measured yet.** The weekly canary
+runs one real search every Monday from a GitHub runner: through the
 `FACEBOOK_PROXY` secret when it is set, from the runner's own address
 otherwise. It is red whenever the search is blocked, empty or incomplete —
-a green badge means 100 ads were actually read that day.
+a green badge means 100 ads were actually read on that run.
 
 ## Scraper API mode
 
