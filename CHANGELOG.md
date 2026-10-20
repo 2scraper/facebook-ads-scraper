@@ -38,6 +38,7 @@ that changes a default is called out at the top of its entry.
   The message notes that a proxy rejecting its credential (HTTP 407) shows
   up in Chromium as a navigation timeout (exit 5), not as a 407.
 - CI only: the canary now runs weekly (Mondays 06:41 UTC) and on a manual dispatch, with its optional secret `FACEBOOK_PROXY` passed on every run; the daily schedule is removed.
+- CI only: the canary no longer requires 7 scroll *actions* for 100 ads. One scroll can bring two result batches: on 2026-10-20 the 100 ads arrived in 8 batches over 5 scrolls, and the run was marked red although it was complete. The check now requires at least one scroll, and keeps requiring rows from the 7th scroll batch or later. A smoke check runs the canary step against that run (`tests/fixtures/fb_ads_canary_nike_us_20261020.json`: the sidecar verbatim, rows cut to the checked columns, advertiser names and ids replaced by placeholders).
 
 ## [0.2.0] - 2026-10-15
 

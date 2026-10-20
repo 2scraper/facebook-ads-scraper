@@ -713,7 +713,7 @@ def _():
     contact = re.compile(r'"(?:phone|email|address)"\s*:\s*"(?!REDACTED-not-verbatim")[^"]+"')
     token = re.compile(r'["\']?(?:fb_dtsg|lsd|jazoest|__hsi|DTSGInitialData)["\']?\s*[:=]\s*["{]')
     files = sorted(_FIX.glob("*"))
-    assert len(files) == 10, [f.name for f in files]
+    assert len(files) == 11, [f.name for f in files]
     for path in files:
         text = path.read_text(encoding="utf-8")
         for name, pattern in (("e-mail", email), ("contact", contact), ("token", token)):
@@ -1947,6 +1947,34 @@ def _():
         source = (ROOT / f"{name}.py").read_text(encoding="utf-8")
         assert "should_block_media(" in source and f"{call}" in source, name
         assert "page_flow.precheck_proxy(" in source, name
+
+
+@check("the canary check step passes a real complete run: canary 2026-10-20 got its 100 ads in 8 scroll batches over 5 scrolls, and was failed for scrolling 5 times rather than 7")
+def _():
+    import subprocess
+    import sys
+    if not (ROOT / ".github").is_dir():
+        return  # the Docker image ships no workflows; the repository's own CI runs this check
+    fixture = json.loads((ROOT / "tests" / "fixtures" / "fb_ads_canary_nike_us_20261020.json").read_text(encoding="utf-8"))
+    meta, rows = fixture["meta"], fixture["rows"]
+    assert meta["searches"][0]["scrolls"] == 5 and max(r["page"] for r in rows) == 8, "fixture changed"
+    snippets = _canary_check_snippets()
+    assert snippets, "no canary check step found in .github/workflows/canary.yml"
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "canary.json").write_text(json.dumps(rows), encoding="utf-8")
+        (Path(tmp) / "canary.json.meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        env = dict(os.environ, HAS_PROXY="true", canary_exit="0", CANARY_REGION="US")
+        for snippet in snippets:
+            proc = subprocess.run([sys.executable, "-c", snippet], cwd=tmp, env=env,
+                                  capture_output=True, text=True, timeout=60)
+            assert proc.returncode == 0 and "canary: OK" in proc.stdout, proc.stdout[-400:] + proc.stderr[-400:]
+        # The same run with its rows stopping before the 7th scroll batch is still red.
+        short = [dict(r, page=min(r["page"], 6)) for r in rows]
+        (Path(tmp) / "canary.json").write_text(json.dumps(short), encoding="utf-8")
+        for snippet in snippets:
+            proc = subprocess.run([sys.executable, "-c", snippet], cwd=tmp, env=env,
+                                  capture_output=True, text=True, timeout=60)
+            assert proc.returncode != 0 and "::error::" in proc.stdout, proc.stdout[-400:]
 
 
 def run() -> int:
