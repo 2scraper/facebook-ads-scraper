@@ -67,7 +67,9 @@ jobs:
           meta = json.load(open('canary.json.meta.json'))
           print(json.dumps(meta, indent=2))
           s = meta['searches'][0]
-          assert meta['status'] == 'complete' and s['stop'] == 'limit' and s['scrolls'] >= 7, meta
+          # scrolls counts scroll ACTIONS, and one can bring two batches (8 batches over 5 scrolls on
+          # 2026-10-20); the batch count is the row 'page' asserted below.
+          assert meta['status'] == 'complete' and s['stop'] == 'limit' and s['scrolls'] >= 1, meta
           assert meta['total_results'] and meta['total_results'] > 1000, meta
           rows = json.load(open('canary.json'))
           assert len(rows) == 100 and len({r['sku'] for r in rows}) == 100, len(rows)
