@@ -1547,6 +1547,46 @@ def _():
     assert meta["stop_reason"] != "not_attempted", meta
 
 
+def _canary_check_snippets():
+    """Every `python3 -c "..."` block in the canary workflow that reads canary_exit."""
+    import textwrap
+    lines = (ROOT / ".github" / "workflows" / "canary.yml").read_text(encoding="utf-8").splitlines()
+    snippets, i = [], 0
+    while i < len(lines):
+        if lines[i].strip() == 'python3 -c "':
+            body = []
+            i += 1
+            while lines[i].strip() != '"':
+                body.append(lines[i])
+                i += 1
+            text = textwrap.dedent("\n".join(body))
+            if "canary_exit" in text:
+                # bash would expand these inside the double quotes; this check runs the text as-is
+                assert not any(ch in text for ch in "$`\\"), "canary snippet uses a bash-special character"
+                snippets.append(text)
+        i += 1
+    return snippets
+
+
+@check("every way the canary check step fails prints an ::error:: line: a nonzero exit with or without the proxy secret, and a missing or wrong output file (a red job with no annotation hid a proxy failure on 2026-10-20)")
+def _():
+    import subprocess
+    import sys
+    snippets = _canary_check_snippets()
+    assert snippets, "no canary check step found in .github/workflows/canary.yml"
+    with tempfile.TemporaryDirectory() as tmp:
+        for snippet in snippets:
+            for has_proxy in ("true", "false"):
+                for code in ("0", "1", "3", "4", "5", "6"):
+                    env = dict(os.environ, HAS_PROXY=has_proxy, canary_exit=code,
+                               canary_details_exit=code, CANARY_REGION="US")
+                    proc = subprocess.run([sys.executable, "-c", snippet], cwd=tmp, env=env,
+                                          capture_output=True, text=True, timeout=60)
+                    # code 0 in an empty directory: the sidecar is missing, which must fail too
+                    assert proc.returncode != 0, (has_proxy, code, "an empty directory passed")
+                    assert "::error::" in proc.stdout, (has_proxy, code, proc.stdout[-300:], proc.stderr[-300:])
+
+
 def run() -> int:
     """All @check-decorated functions above already ran at import time
     (that's the point — see the `check()` docstring) and self-registered
