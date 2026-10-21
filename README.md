@@ -268,6 +268,13 @@ runs one real search every Monday from a GitHub runner: through the
 otherwise. It is red whenever the search is blocked, empty or incomplete —
 a green badge means 100 ads were actually read on that run.
 
+The canary's run passes `--proxy-budget-mb 25`, above the scraper's own
+10 MB default, which is unchanged. Measured 2026-10-21 through
+`FACEBOOK_PROXY`: the 100-ad search used 13.5 MB, over the 10 MB cap, so a
+10 MB canary stopped a healthy run. The job summary shows the run's traffic
+against the budget recorded in its sidecar (`proxy_budget_bytes`), and a run
+that hits 25 MB still fails the job.
+
 ## Proxy traffic: pre-check and media
 
 The pre-check, media blocking and the traffic budget below apply only to a **local** browser going through `--proxy` /
