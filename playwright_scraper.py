@@ -41,6 +41,7 @@ else:
 
 import env_config
 import page_flow
+import proxy_meter
 import proxy_pool as proxy_savers
 import scraper_api_engine
 import scraper_api_client
@@ -292,6 +293,10 @@ class _PlaywrightEngine:
         if proxy_savers.should_block_media(self.args, proxy_in_use=proxy is not None, over_cdp=reuse_default):
             await context.route("**/*", _media_route)
             self.media_blocked = True
+        if proxy is not None and not reuse_default:
+            # Counted for --proxy-budget-mb; registered after the media route,
+            # so it is asked first and aborts everything once the budget is spent.
+            await proxy_meter.current().attach_playwright_async(context)
         page = await context.new_page()
         if self.autosolve:
             await _enable_scraping_browser_auto_solve(context, page)
@@ -346,6 +351,7 @@ async def run(args: argparse.Namespace) -> int:
                 if user_agent:
                     log.info("Fingerprint applied: user agent %s", user_agent)
 
+    page_flow.start_proxy_meter(args, proxy_pool)
     if not args.cdp_endpoint:
         # Before the browser: a gateway that refuses the credential (407) or
         # has no balance left (402) would refuse every request it makes.

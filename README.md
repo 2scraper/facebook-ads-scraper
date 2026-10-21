@@ -270,7 +270,7 @@ a green badge means 100 ads were actually read on that run.
 
 ## Proxy traffic: pre-check and media
 
-Both apply only to a **local** browser going through `--proxy` /
+The pre-check, media blocking and the traffic budget below apply only to a **local** browser going through `--proxy` /
 `--proxy-file` (or `FACEBOOK_PROXY`). Nothing changes with
 `--cdp-endpoint` (the Scraping Browser API brings its own exit and is
 configured on its own side), with `--scraper-api` (no local proxy), or
@@ -304,6 +304,31 @@ keeps them. `<out>.meta.json` records `media_blocked`.
 
 While a route is installed, Playwright does not use its HTTP cache.
 
+**Budget.** Every byte a local browser sends or receives through the proxy
+is counted, and `--proxy-budget-mb` (default `10`; `0` = unlimited) caps a
+run. Once the running total passes the budget, no further scroll, details
+request or search is started, the browser aborts any request it still
+tries, the ads already read are kept, and the run ends with `stop_reason:
+proxy_budget_exceeded`: exit 6 with rows, 5 without. It never goes on
+silently. At the end of a proxied run one line is printed, e.g. `Proxy
+traffic: 3.2 MB of 10 MB budget`, and the sidecar records `proxy_bytes`,
+`proxy_budget_bytes` and `proxy_budget_exceeded` (`null` / `null` /
+`false` when no local proxy was used). A proxied run that writes no rows
+records them in `<out>.latest_attempt.meta.json`, leaving the data and
+`<out>.meta.json` as they were.
+
+The count is an estimate of the tunnelled payload — request line, headers
+and body sent, response headers and body as received (compressed) — not
+the proxy's invoice: TLS records, the `CONNECT` exchange, WebSocket frames
+and Chrome's own background requests are not visible to it, so the bill is
+a few per cent higher. 1 MB = 1,000,000 bytes.
+
+| Engine | Counted from |
+|---|---|
+| Playwright | `request.sizes()` of every finished or failed request (request headers + body, response headers + body) |
+| Puppeteer | CDP `Network.loadingFinished.encodedDataLength` of every response that came over the network, plus each request's line, headers and body (`Network.requestWillBeSent`) |
+| Selenium | the same CDP events, from Chrome's performance log |
+
 Measured 2026-10-20 with Playwright and no proxy, from a datacentre
 address (`--query nike --region US --max-results 40`), two runs loading
 media and one with blocking forced on: the same 29 ad IDs, in the same
@@ -333,17 +358,17 @@ fetched because the run stopped early are listed in `unattempted_pages`
 instead), whether `--max-results` capped
 it, solves spent, and a hash of the output file. A run that collects
 nothing writes neither, so it never replaces your previous good file.
-A run stopped by the proxy pre-check writes only
-`<out>.latest_attempt.meta.json` (see
+A run stopped by the proxy pre-check, or a proxied run that collects
+nothing, writes only `<out>.latest_attempt.meta.json` (see
 [Proxy traffic](#proxy-traffic-pre-check-and-media)).
 
 | Exit | Meaning |
 |---|---|
 | `0` | complete |
-| `6` | partial: rows were written, but the run did not finish cleanly — `stop_reason` says why (`stalled`, `blocked`, `not_painted`, `failed_pages`, `rejected_rows`, `parse_error`, `remote_api_error`, `proxy_pool_exhausted`) |
+| `6` | partial: rows were written, but the run did not finish cleanly — `stop_reason` says why (`stalled`, `blocked`, `not_painted`, `failed_pages`, `rejected_rows`, `parse_error`, `remote_api_error`, `proxy_pool_exhausted`, `proxy_budget_exceeded`) |
 | `3` | blocked, no rows |
 | `4` | no rows: the library has no ads for any of the searches |
-| `5` | nothing could be read (the proxy refused the pre-check with 407/402, the page never painted, a fetch failure, a Scraper API error, or `parse_error`: the page stated how many ads match but none of them could be read — the page's data changed shape, please report it); no rows |
+| `5` | nothing could be read (the proxy refused the pre-check with 407/402, the proxy budget ran out before any ad was read, the page never painted, a fetch failure, a Scraper API error, or `parse_error`: the page stated how many ads match but none of them could be read — the page's data changed shape, please report it); no rows |
 | `2` | bad usage, including input where every line was skipped |
 | `1` | crash (a bug; please report it) |
 
@@ -405,6 +430,7 @@ the command line.
 | `--proxy` / `--proxy-file` / `--proxy-shuffle` | `FACEBOOK_PROXY` | one proxy or a rotating pool, for a local browser |
 | `--proxy-block-retries` | 3 | blocked answers before that proxy is dropped from the pool |
 | `--load-media` | off | load images, video and fonts behind a local proxy (blocked by default there; see [Proxy traffic](#proxy-traffic-pre-check-and-media)) |
+| `--proxy-budget-mb` | 10 | stop once this many MB went through a local proxy; `0` = unlimited (see [Proxy traffic](#proxy-traffic-pre-check-and-media)) |
 | `--scraper-api` | off | no browser: fetch each search through 2Captcha's Scraper API (needs `TWOCAPTCHA_KEY`) — first 30 ads only |
 | `--cdp-endpoint` | `FACEBOOK_CDP_ENDPOINT` | connect to a Scraping Browser API profile instead of launching a browser |
 | `--solve-captcha` | when-blocked | `off` disables the Browser API's own captcha auto-solve; there is no local solver |

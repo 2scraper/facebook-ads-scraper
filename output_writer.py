@@ -30,6 +30,8 @@ from typing import List, Optional, Sequence
 # caller (CI, a cron job, another program) must be able to tell these apart
 # without parsing stdout.
 # --------------------------------------------------------------------------- #
+import proxy_meter
+
 EXIT_OK = 0
 EXIT_CRASH = 1
 EXIT_BAD_USAGE = 2
@@ -347,6 +349,33 @@ def write_failed_attempt(out_path: str, *, stop_reason: str, engine: str, url: s
         "started_at": started_at,
         "finished_at": time.time(),
     }
+    meta.update(proxy_meter.sidecar())  # proxy_bytes / proxy_budget_bytes / proxy_budget_exceeded
+    meta.update(extra or {})
+    path = attempt_meta_path_for(out_path)
+    with _atomic_text(path) as stream:
+        json.dump(meta, stream, ensure_ascii=False, indent=2)
+    proxy_meter.report()
+    return path
+
+
+def _write_attempt(out_path: str, *, status: str, stop_reason: str, engine: str, url: str, pages_requested: int,
+                   pages_completed: int, failed_pages: List[int], started_at: float,
+                   extra: Optional[dict] = None) -> str:
+    """`<out>.latest_attempt.meta.json` for a proxied run that wrote no data."""
+    meta = {
+        "status": status,
+        "stop_reason": stop_reason,
+        "engine": engine,
+        "url": url,
+        "pages_requested": pages_requested,
+        "pages_completed": pages_completed,
+        "failed_pages": failed_pages or [],
+        "product_count": 0,
+        "data_updated": False,
+        "started_at": started_at,
+        "finished_at": time.time(),
+    }
+    meta.update(proxy_meter.sidecar())
     meta.update(extra or {})
     path = attempt_meta_path_for(out_path)
     with _atomic_text(path) as stream:
@@ -388,6 +417,9 @@ def finish_run(
     NEVER overwrites a previous good output with an empty one unless the
     caller explicitly passed --allow-empty."""
     failed_pages = failed_pages or []
+    meter = proxy_meter.current()
+    if meter.exceeded:
+        incomplete_reason = proxy_meter.STOP_REASON
     partial = bool(failed_pages) or bool(incomplete_reason)
     zero_products = len(products) == 0
 
@@ -425,6 +457,11 @@ def finish_run(
     else:
         status, exit_code = "complete", EXIT_OK
         stop_reason = status
+    if meter.exceeded:
+        # The run stopped itself at --proxy-budget-mb: rows kept -> 6, none -> 5,
+        # whatever else the pages it did fetch said.
+        status, exit_code = ("remote_api_error", EXIT_REMOTE_API_ERROR) if zero_products else ("partial", EXIT_PARTIAL)
+        stop_reason = proxy_meter.STOP_REASON
 
     # The "never overwrite good output with empty" rule: a zero-product
     # outcome (whatever its status above — blocked/remote_api_error/empty
@@ -436,6 +473,13 @@ def finish_run(
     # engine's own logs carry the diagnostic detail — that's what a
     # failed run's output is FOR, not this file.
     if zero_products and not allow_empty:
+        if meter.active:
+            # Nothing is written, but what the proxy carried is still recorded
+            # (`<out>.latest_attempt.meta.json`; data and .meta.json untouched).
+            _write_attempt(out_path, status=status, stop_reason=stop_reason, engine=engine, url=url,
+                           pages_requested=pages_requested, pages_completed=pages_completed,
+                           failed_pages=failed_pages, started_at=started_at, extra=extra_meta)
+        proxy_meter.report()
         return exit_code
 
     write_output(products, out_path, fmt)
@@ -456,6 +500,7 @@ def finish_run(
         housekeeping["capped"] = len(products) >= max_results if capped is None else capped
     if total_results is not None:
         housekeeping["total_results"] = total_results  # what the site says exists, vs product_count collected
+    housekeeping.update(proxy_meter.sidecar())
     housekeeping["output_sha256"] = hashlib.sha256(Path(out_path).read_bytes()).hexdigest()
     extra = {**housekeeping, **(extra_meta or {})}
     write_meta(
@@ -465,4 +510,5 @@ def finish_run(
         price_confirmed_pct=price_confirmed_pct, started_at=started_at,
         extra=extra or None,
     )
+    proxy_meter.report()
     return exit_code
