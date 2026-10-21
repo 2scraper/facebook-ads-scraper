@@ -46,6 +46,7 @@ from typing import Protocol as _Protocol
 import sys as _sys
 
 import ad_parser as ap
+import proxy_meter as _meter
 import proxy_pool as _proxies
 from captcha_solver import detect_from_html
 from output_writer import EXIT_REMOTE_API_ERROR as _EXIT_REMOTE_API_ERROR
@@ -286,6 +287,8 @@ async def _scroll(engine: Engine, session: PageSession, collector: ap.Collector,
                   waited)
     page = 0
     while not collector.full and collector.has_next_page is not False and outcome.scrolls < max_scrolls:
+        if _meter.exceeded():
+            break  # --proxy-budget-mb: no further scroll batch through the proxy
         await session.scroll_to_bottom()
         outcome.scrolls += 1
         await session.wait(SCROLL_WAIT_S)
@@ -303,6 +306,8 @@ async def _scroll(engine: Engine, session: PageSession, collector: ap.Collector,
         height = max(height, new_height)
     if collector.full:
         outcome.stop = "limit"
+    elif _meter.exceeded():
+        outcome.stop = outcome.failure = _meter.STOP_REASON
     elif collector.has_next_page is False:
         outcome.stop = "end"
     else:
@@ -367,6 +372,11 @@ async def _details(engine: Engine, args, session: PageSession, collector: ap.Col
         if data is None:
             outcome.details = "error"
             return
+        if _meter.exceeded():
+            outcome.details = _meter.STOP_REASON
+            _log.warning("%s: the proxy budget is spent — %d of %d ads have details.", outcome.url,
+                         outcome.details_read, len(collector.rows))
+            return
         await session.wait(DETAILS_DELAY_S)
         try:
             status, body = await session.post_form(data)
@@ -410,6 +420,9 @@ async def fetch_search(engine: Engine, args, url: str, index: int, proxy_pool) -
     try:
         last_error, status = None, None
         for attempt in range(args.retries + 1):
+            if _meter.exceeded():
+                last_error = _meter.STOP_REASON
+                break
             try:
                 status = await session.goto(ap.fetch_url(url))
                 last_error = None
@@ -425,6 +438,9 @@ async def fetch_search(engine: Engine, args, url: str, index: int, proxy_pool) -
                     break  # a refused key or an empty balance: every retry would fail the same way
                 if attempt < args.retries:
                     await engine.sleep(args.retry_delay)
+        if last_error == _meter.STOP_REASON:
+            outcome.failure = _meter.STOP_REASON
+            return outcome
         if last_error is not None:
             _log.error("%s permanently failed to load: %s", url, last_error)
             outcome.failure = "remote_api_error" if getattr(engine, "last_remote_error", False) else "fetch_error"
@@ -529,7 +545,7 @@ async def run(engine: Engine, args, *, urls: List[str], proxy_pool, client, star
         outcome = await fetch_search(engine, args, url, i, proxy_pool)
         outcomes.append(outcome)
         consecutive_blocks = consecutive_blocks + 1 if outcome.blocked else 0
-        stop = (outcome.failure == "proxy_pool_exhausted" or getattr(engine, "fatal", None)
+        stop = (outcome.failure == "proxy_pool_exhausted" or getattr(engine, "fatal", None) or _meter.exceeded()
                 or (proxy_pool is None and consecutive_blocks >= STOP_AFTER_CONSECUTIVE_BLOCKS))
         if stop and i < len(urls):
             if proxy_pool is None and consecutive_blocks >= STOP_AFTER_CONSECUTIVE_BLOCKS:
@@ -575,7 +591,7 @@ def finish_searches(args, outcomes: List[SearchOutcome], *, engine_name: str, ur
                   media_blocked=media_blocked)
 
 
-_INCOMPLETE_REASONS = ("stalled", "not_painted", "parse_error", "proxy_pool_exhausted")
+_INCOMPLETE_REASONS = ("stalled", "not_painted", "parse_error", "proxy_pool_exhausted", _meter.STOP_REASON)
 
 
 def finish(args, *, products: List[Product], blocked: bool, remote_api_error: bool, engine_name: str,
@@ -639,6 +655,14 @@ def precheck_proxy(args, proxy_pool, *, urls: List[str], engine_name: str, start
 PRECHECK_TIMEOUT_S = 20
 
 
+def start_proxy_meter(args, proxy_pool) -> "_meter.ProxyMeter":
+    """Meter this run's traffic when it goes through a LOCAL proxy (not
+    over --cdp-endpoint, not the Scraper API, not without a proxy)."""
+    active = (proxy_pool is not None and not getattr(args, "cdp_endpoint", None)
+              and not getattr(args, "scraper_api", False))
+    return _meter.start(getattr(args, "proxy_budget_mb", _meter.DEFAULT_BUDGET_MB), active=active)
+
+
 def add_media_arguments(p) -> None:
     """--load-media, and the hidden switch that measures blocking for free."""
     p.add_argument("--load-media", action="store_true",
@@ -646,6 +670,7 @@ def add_media_arguments(p) -> None:
                         "aborts them (no field here is read from them, and the proxy bills per byte); nothing is "
                         "blocked with --cdp-endpoint or with no proxy")
     p.add_argument("--force-block-media", action="store_true", help=argparse.SUPPRESS)
+    _meter.add_budget_argument(p)
 
 
 def validate_common(args, *, urls, skipped, print_err) -> Optional[int]:

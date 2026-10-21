@@ -41,8 +41,14 @@ jobs:
           if [ "$HAS_PROXY" = "true" ]; then echo "Route: FACEBOOK_PROXY secret"; \
           else echo "Route: the GitHub runner's own address (no FACEBOOK_PROXY secret)"; fi
           python3 playwright_scraper.py --query "$CANARY_QUERY" --region "$CANARY_REGION" \
-            --max-results 100 --format json --out canary.json --dump-html
+            --max-results 100 --format json --out canary.json --dump-html --proxy-budget-mb 10
           echo "canary_exit=$?" >> "$GITHUB_ENV"
+
+      # What the run sent through FACEBOOK_PROXY, read from its sidecar; red
+      # when it stopped at the 10 MB budget (stop_reason proxy_budget_exceeded).
+      - name: Proxy traffic
+        if: always()
+        run: python3 .github/proxy_traffic_summary.py canary.json canary 10
 
       - name: Require a complete run with full rows
         run: |
