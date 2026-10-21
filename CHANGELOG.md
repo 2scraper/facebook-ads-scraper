@@ -55,6 +55,7 @@ that changes a default is called out at the top of its entry.
 
 ### Changed
 
+- CI only: the canary run passes `--proxy-budget-mb 25` instead of 10 (measured 2026-10-21: the 100-ad search used 13.5 MB, over the 10 MB cap), and `.github/proxy_traffic_summary.py` reports the budget from the run's sidecar (`proxy_budget_bytes`, 10 MB fallback) instead of a fixed figure. The scraper's default budget stays 10 MB.
 - CI only: a failed canary check now always ends with an `::error::` line. A run
   through the `FACEBOOK_PROXY` secret that exited nonzero used to end red with no
   annotation, and a missing or wrong output file showed only a traceback.
