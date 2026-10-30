@@ -1,4 +1,4 @@
-# facebook-ads-scraper
+# Meta Ad Library Scraper — Ads, Advertisers and Political Ad Spend in Python
 
 ![release](https://img.shields.io/github/v/release/2scraper/facebook-ads-scraper?sort=semver)
 ![tests](https://github.com/2scraper/facebook-ads-scraper/actions/workflows/tests.yml/badge.svg)
@@ -7,6 +7,8 @@
 ![licence](https://img.shields.io/badge/licence-MIT-green)
 ![engines](https://img.shields.io/badge/engines-Playwright%20%7C%20Selenium%20%7C%20Puppeteer-informational)
 ![no login](https://img.shields.io/badge/runs%20without-an%20account-success)
+
+**Meta Ad Library scraper** — an open-source (MIT) Python tool that reads Meta's Ad Library (facebook.com/ads/library) logged out and writes one row per ad — its text, link, image and video URLs, run dates, platforms and advertiser, plus spend, impressions and reach ranges for political and issue ads — to JSON or CSV. Measured live on 2026-10-05 and 2026-10-06 from an ordinary residential IP with no key and no proxy, 46 page loads in an hour met no login wall and no captcha. Use it to build a dataset of a keyword's or an advertiser's ads, or compare two runs with the included diff tool to see which ads changed.
 
 **Scrape Meta's Ad Library (facebook.com/ads/library) into clean JSON or
 CSV, without logging in.** Search by keyword or by advertiser, in one
@@ -517,6 +519,22 @@ the offline suite on Python 3.9 and 3.12, installs the built wheel
 outside the checkout, builds the Docker image and launches Chromium in
 it, and runs each engine in its own virtualenv. `TESTING.md` describes
 live testing; `CHANGELOG.md` has the history.
+
+## Guides
+
+- [How to run the 2scraper scrapers: setup, proxies, exit codes and access modes](https://2captcha.com/h/how-to-run-2scraper-open-source-scrapers) — installation, `.env`, `.meta.json` for the whole family.
+
+## Related scrapers
+
+Same CLI conventions, same output contract (one row per item, JSON or CSV, a `.meta.json` sidecar and shared exit codes):
+
+- [Facebook scraper](https://github.com/2scraper/facebook-pages-scraper) — Public Facebook Pages — contacts, followers, owner…
+- [Snapchat scraper](https://github.com/2scraper/snapchat-scraper) — Public Snapchat profiles, Spotlight engagement and story…
+- [TikTok Ad Library scraper](https://github.com/2scraper/tiktok-ads-scraper) — Ads from TikTok's EU Ad Library
+- [TikTok Profile scraper](https://github.com/2scraper/tiktok-profile-scraper) — Exact follower, like and video counts, bio, verification…
+- [TikTok Video scraper](https://github.com/2scraper/tiktok-video-scraper) — TikTok videos with exact engagement, sound, hashtags…
+
+All scrapers: [github.com/2scraper](https://github.com/2scraper) · Need another site? [Open a request](https://github.com/2scraper/.github/issues/new?title=%5BScraper%20request%5D%20)
 
 ## Licence
 
