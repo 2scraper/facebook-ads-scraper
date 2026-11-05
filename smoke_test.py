@@ -210,6 +210,10 @@ def _():
         if any(part.endswith(".egg-info") or part in ("build", "dist") or part.startswith(".venv") for part in path.parts):
             continue  # build artefacts, git-ignored and never shipped
         text = path.read_text(encoding="utf-8", errors="ignore")
+        if path == ROOT / "README.md":
+            # The README's "Related scrapers" list links the sibling repository by
+            # name on purpose; only that section is exempt, the rest stays checked.
+            text = re.sub(r"(?ms)^## Related scrapers\n.*?(?=^## |\Z)", "", text)
         for word in leftovers:
             assert word not in text, f"{path.relative_to(ROOT)}: still says {word!r}"
 
