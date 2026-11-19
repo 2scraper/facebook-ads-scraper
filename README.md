@@ -1,4 +1,4 @@
-# Meta Ad Library Scraper — Ads, Advertisers and Political Ad Spend in Python
+# Facebook Ads Scraper — Meta Ad Library Ads, Advertisers and Political Ad Spend in Python
 
 ![release](https://img.shields.io/github/v/release/2scraper/facebook-ads-scraper?sort=semver)
 ![tests](https://github.com/2scraper/facebook-ads-scraper/actions/workflows/tests.yml/badge.svg)
@@ -8,7 +8,7 @@
 ![engines](https://img.shields.io/badge/engines-Playwright%20%7C%20Selenium%20%7C%20Puppeteer-informational)
 ![no login](https://img.shields.io/badge/runs%20without-an%20account-success)
 
-**Meta Ad Library scraper** — an open-source (MIT) Python tool that reads Meta's Ad Library (facebook.com/ads/library) logged out and writes one row per ad — its text, link, image and video URLs, run dates, platforms and advertiser, plus spend, impressions and reach ranges for political and issue ads — to JSON or CSV. Measured live on 2026-10-05 and 2026-10-06 from an ordinary residential IP with no key and no proxy, 46 page loads in an hour met no login wall and no captcha. Use it to build a dataset of a keyword's or an advertiser's ads, or compare two runs with the included diff tool to see which ads changed.
+**Facebook Ads scraper** — an open-source (MIT) Python tool that reads Meta's Ad Library (facebook.com/ads/library) logged out and writes one row per ad — its text, link, image and video URLs, run dates, platforms and advertiser, plus spend, impressions and reach ranges for political and issue ads — to JSON or CSV. Measured live on 2026-10-05 and 2026-10-06 from an ordinary residential IP with no key and no proxy, 46 page loads in an hour met no login wall and no captcha. Use it to build a dataset of a keyword's or an advertiser's ads, or compare two runs with the included diff tool to see which ads changed.
 
 **Scrape Meta's Ad Library (facebook.com/ads/library) into clean JSON or
 CSV, without logging in.** Search by keyword or by advertiser, in one
@@ -531,7 +531,7 @@ Same CLI conventions, same output contract (one row per item, JSON or CSV, a `.m
 - [Facebook scraper](https://github.com/2scraper/facebook-pages-scraper) — Public Facebook Pages — contacts, followers, owner…
 - [Instagram scraper](https://github.com/2scraper/instagram-scraper) — Public profiles, posts and Reels, read logged out
 - [Snapchat scraper](https://github.com/2scraper/snapchat-scraper) — Public Snapchat profiles, Spotlight engagement and story…
-- [TikTok Ad Library scraper](https://github.com/2scraper/tiktok-ads-scraper) — Ads from TikTok's EU Ad Library
+- [TikTok Ads scraper](https://github.com/2scraper/tiktok-ads-scraper) — EU and EEA ads from the TikTok Ad Library
 - [TikTok Profile scraper](https://github.com/2scraper/tiktok-profile-scraper) — Exact follower, like and video counts, bio, verification…
 - [TikTok Video scraper](https://github.com/2scraper/tiktok-video-scraper) — TikTok videos with exact engagement, sound, hashtags…
 
