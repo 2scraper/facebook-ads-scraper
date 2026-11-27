@@ -55,6 +55,8 @@ that changes a default is called out at the top of its entry.
 
 ### Changed
 
+- CI only: the offline-checks job runs on `ubuntu-24.04` instead of `ubuntu-latest`, which moved to Ubuntu 26.04, where `actions/setup-python` has no Python 3.9 build. 3.9 stays the supported floor.
+- Docker: the image installs `libatomic1` before Playwright. Recent Playwright releases' Node driver needs it to run `playwright install` at all, and the slim base image does not ship it, so the image build failed.
 - CI only: the canary run passes `--proxy-budget-mb 25` instead of 10 (measured 2026-10-21: the 100-ad search used 13.5 MB, over the 10 MB cap), and `.github/proxy_traffic_summary.py` reports the budget from the run's sidecar (`proxy_budget_bytes`, 10 MB fallback) instead of a fixed figure. The scraper's default budget stays 10 MB.
 - CI only: a failed canary check now always ends with an `::error::` line. A run
   through the `FACEBOOK_PROXY` secret that exited nonzero used to end red with no
